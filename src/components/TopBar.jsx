@@ -4,10 +4,9 @@ const TopBar = ({ onGetStarted }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const navigationItems = [
-    { label: 'RESEARCH', href: '#research' },
-    { label: 'PRODUCT', href: '#product' },
-    { label: 'STUDIOS', href: '#studios' },
-    { label: 'COMPANY', href: '#company' }
+    { label: 'EXPLORE', href: '#explore' },
+    { label: 'PRICING', href: '#pricing' },
+    { label: 'CAREER', href: '#career' }
   ]
 
   return (
