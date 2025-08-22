@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import TopBar from './TopBar'
 import TypewriterText from './TypewriterText'
 import { ChevronDown } from 'lucide-react'
+import Footer from './Footer'
 
 const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
   const [firstLineComplete, setFirstLineComplete] = useState(false)
@@ -68,13 +69,8 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
         <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center px-4 z-10">
           {/* Main Slogan */}
           <div className="text-center">
-            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-wide mb-4" style={{ 
-              fontFamily: 'Doto, sans-serif',
-              textShadow: `
-                0 0 20px rgba(0, 0, 0, 0.8),
-                0 0 40px rgba(0, 0, 0, 0.6),
-                4px 4px 8px rgba(0, 0, 0, 0.9)
-              `
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-wide mb-4 hero-text-shadow gpu-accelerated" style={{ 
+              fontFamily: 'Doto, sans-serif'
             }}>
               <TypewriterText 
                 text="The moment you imagine," 
@@ -83,13 +79,8 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
                 onComplete={handleFirstLineComplete}
               />
             </h1>
-            <h2 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-wide" style={{ 
-              fontFamily: 'Doto, sans-serif',
-              textShadow: `
-                0 0 20px rgba(0, 0, 0, 0.8),
-                0 0 40px rgba(0, 0, 0, 0.6),
-                4px 4px 8px rgba(0, 0, 0, 0.9)
-              `
+            <h2 className="text-4xl md:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-wide hero-text-shadow gpu-accelerated" style={{ 
+              fontFamily: 'Doto, sans-serif'
             }}>
               {firstLineComplete && (
                 <TypewriterText 
@@ -287,6 +278,7 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   )
 }
