@@ -12,15 +12,15 @@ const Footer = () => {
         </div>
 
         {/* 메뉴 섹션 - 한 줄로 정렬 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
           {/* Use Cases */}
           <div>
             <h3 className="font-semibold text-white mb-4">Use Cases</h3>
             <ul className="space-y-2">
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Sales</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Support</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Consulting</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Recruiting</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">UI/UX Designer</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Content Creator</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Early Startups</a></li>
+              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Educator</a></li>
             </ul>
           </div>
 
@@ -32,19 +32,6 @@ const Footer = () => {
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Manifesto</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Press</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Careers</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Bug Bounty</a></li>
-            </ul>
-          </div>
-
-          {/* Enterprise */}
-          <div>
-            <h3 className="font-semibold text-white mb-4">Enterprise</h3>
-            <ul className="space-y-2">
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Afterwon for Enterprise</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Enterprise Security</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Vendor Profile</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">ROI Calculator</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Book A Demo</a></li>
             </ul>
           </div>
 
@@ -63,8 +50,6 @@ const Footer = () => {
             <ul className="space-y-2">
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Privacy Policy</a></li>
               <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Terms of Service</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Data Processing Agreement</a></li>
-              <li><a href="#" className="text-gray-300 hover:text-white transition-colors text-sm">Subprocessors</a></li>
             </ul>
           </div>
         </div>
