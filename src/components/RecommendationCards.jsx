@@ -1,6 +1,60 @@
+import { useState, useEffect } from 'react'
 import { ImageIcon, Heart, Download, Palette, Sparkles, TrendingUp } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
+import { getUserGenerations } from '../utils/firestore'
 
 const RecommendationCards = () => {
+  const { currentUser } = useAuth()
+  const [recentGenerations, setRecentGenerations] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  // 실제 생성 이력 데이터 로드
+  useEffect(() => {
+    const loadRecentGenerations = async () => {
+      if (currentUser) {
+        try {
+          setLoading(true)
+          const generations = await getUserGenerations(currentUser.uid)
+          console.log('Loaded generations:', generations) // 디버깅 로그
+          
+          // 데이터 구조 확인
+          generations.forEach((gen, index) => {
+            console.log(`Generation ${index}:`, {
+              id: gen.id,
+              prompt: gen.prompt,
+              result: gen.result,
+              storageImageUrl: gen.result?.asset?.storageImageUrl,
+              dalleImage: gen.result?.asset?.dalleImage
+            })
+          })
+          
+          // 최근 6개만 표시
+          setRecentGenerations(generations.slice(0, 6))
+        } catch (error) {
+          console.error('Failed to load recent generations:', error)
+        } finally {
+          setLoading(false)
+        }
+      } else {
+        setLoading(false)
+      }
+    }
+
+    loadRecentGenerations()
+  }, [currentUser])
+
+  // 타입에 따른 이모지 반환 함수
+  const getEmojiForType = (type) => {
+    const emojiMap = {
+      'Icon': '🎯',
+      'Emoji': '😊',
+      'Illustration': '🎨',
+      'Logo': '🏢',
+      'Character': '👤'
+    }
+    return emojiMap[type] || '🎯'
+  }
+
   const recommendedStyles = [
     {
       title: 'Liquid Glass Icons',
@@ -92,26 +146,81 @@ const RecommendationCards = () => {
           </button>
         </div>
         <div className="flex gap-6 overflow-x-auto pb-4 pr-4">
-          {recentCreations.map((creation, index) => (
-            <div key={index} className="relative flex-shrink-0 w-80 h-64 rounded-2xl overflow-hidden">
-              {/* Background Image */}
-              <img 
-                src="/images/homepage/background.png" 
-                alt="Background"
-                className="w-full h-full object-cover"
-              />
-              
-              {/* Centered Emoji/Component */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-8xl">{creation.image}</div>
+          {loading ? (
+            // 로딩 상태
+            Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="relative flex-shrink-0 w-80 h-64 rounded-2xl overflow-hidden bg-slate-200 animate-pulse">
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="text-slate-400">Loading...</div>
+                </div>
               </div>
-              
-              {/* Title at bottom left */}
-              <div className="absolute bottom-3 left-3">
-                <h3 className="text-sm font-medium text-white drop-shadow-lg">{creation.title}</h3>
+            ))
+          ) : recentGenerations.length > 0 ? (
+            // 실제 데이터 표시
+            recentGenerations.map((generation, index) => (
+              <div key={generation.id || index} className="relative flex-shrink-0 w-80 h-64 rounded-2xl overflow-hidden">
+                {/* Background Image - 모든 카드에 동일한 배경 */}
+                <img 
+                  src="/images/homepage/background.png" 
+                  alt="Background"
+                  className="w-full h-full object-cover"
+                />
+                
+                {/* 생성된 이미지 미리보기 (여러 소스 시도) */}
+                {(generation.result?.asset?.storageImageUrl || generation.result?.asset?.dalleImage) && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <img 
+                      src={generation.result.asset.storageImageUrl || generation.result.asset.dalleImage}
+                      alt={generation.prompt}
+                      className="w-32 h-32 object-contain rounded-lg shadow-lg"
+                      onError={(e) => {
+                        console.log('Image failed to load:', e.target.src)
+                        // 이미지 로드 실패 시 이모지 표시
+                        e.target.style.display = 'none'
+                        e.target.nextSibling.style.display = 'block'
+                      }}
+                    />
+                    {/* 이미지 로드 실패 시 대체 이모지 */}
+                    <div className="text-6xl hidden">
+                      {getEmojiForType(generation.options?.type)}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Title and Style at bottom */}
+                <div className="absolute bottom-3 left-3 right-3">
+                  <h3 className="text-sm font-medium text-white drop-shadow-lg truncate">
+                    {generation.prompt || 'Untitled'}
+                  </h3>
+                  <p className="text-xs text-white/80 drop-shadow-lg">
+                    {generation.options?.style || 'Default Style'}
+                  </p>
+                </div>
               </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            // 데이터가 없는 경우 기본 카드들 표시
+            recentCreations.map((creation, index) => (
+              <div key={index} className="relative flex-shrink-0 w-80 h-64 rounded-2xl overflow-hidden">
+                {/* Background Image */}
+                <img 
+                  src="/images/homepage/background.png" 
+                  alt="Background"
+                  className="w-full h-full object-cover"
+                />
+                
+                {/* Centered Emoji/Component */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-8xl">{creation.image}</div>
+                </div>
+                
+                {/* Title at bottom left */}
+                <div className="absolute bottom-3 left-3">
+                  <h3 className="text-sm font-medium text-white drop-shadow-lg">{creation.title}</h3>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
