@@ -4,6 +4,9 @@ import { Camera, Smile, Plus, ChevronDown, ArrowUp, X, Image as ImageIcon } from
 const CreationPage = ({ startNewChat }) => {
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState([])
+  const [activeSegment, setActiveSegment] = useState('image') // 'image' 또는 'code'
+  const [leftPanelWidth, setLeftPanelWidth] = useState(320) // 기본 너비 320px (w-80)
+  const [isResizing, setIsResizing] = useState(false)
   
   // localStorage에서 채팅 이력 불러오기
   const [chatHistory, setChatHistory] = useState(() => {
@@ -22,7 +25,7 @@ const CreationPage = ({ startNewChat }) => {
     return [{
       id: 1,
       type: 'assistant',
-      message: "Welcome! I'm your AI assistant for component design.\nGenerate anything from UI components to icons and emojis with a simple prompt.\n\nNot sure where to begin? Try one of these examples.",
+      message: "Hello! I'm Afterwon 1.0, your creative AI assistant specializing in visual content creation. I can help you create stunning images, videos, and bring your creative ideas to life. What would you like to create today? Feel free to describe your vision or ask for suggestions to get started.",
       timestamp: new Date().toLocaleTimeString(),
       date: new Date()
     }]
@@ -31,6 +34,58 @@ const CreationPage = ({ startNewChat }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const fileInputRef = useRef(null)
+
+  // 리사이징 시작
+  const handleMouseDown = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsResizing(true)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  // 리사이징 중
+  const handleMouseMove = (e) => {
+    if (!isResizing) return
+    
+    requestAnimationFrame(() => {
+      const newWidth = e.clientX
+      const minWidth = 200 // 최소 너비
+      const maxWidth = window.innerWidth * 0.8 // 최대 너비 (화면의 80%)
+      
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setLeftPanelWidth(newWidth)
+      }
+    })
+  }
+
+  // 리사이징 종료
+  const handleMouseUp = () => {
+    setIsResizing(false)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+
+  // 컴포넌트 마운트 시 마우스 이벤트 리스너 추가
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+  }, [isResizing])
+
+  // 컴포넌트 언마운트 시 이벤트 리스너 정리
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
 
   // 채팅 이력을 localStorage에 저장
   const saveChatHistory = (history) => {
@@ -71,7 +126,7 @@ const CreationPage = ({ startNewChat }) => {
       const newChat = {
         id: Date.now(),
         type: 'assistant',
-        message: "Welcome! I'm your AI assistant for component design.\nGenerate anything from UI components to icons and emojis with a simple prompt.\n\nNot sure where to begin? Try one of these examples.",
+        message: "Hello! I'm Afterwon 1.0, your creative AI assistant specializing in visual content creation. I can help you create stunning images, videos, and bring your creative ideas to life. What would you like to create today? Feel free to describe your vision or ask for suggestions to get started.",
         timestamp: new Date().toLocaleTimeString(),
         date: new Date()
       }
@@ -148,12 +203,16 @@ const CreationPage = ({ startNewChat }) => {
   ]
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="flex-1 p-4 sm:p-6 overflow-hidden flex flex-col">
-        <div className="mx-auto max-w-4xl w-full h-full flex flex-col">
+    <div className="h-full flex bg-white">
+      {/* Left Section - Chat Interface (리사이즈 가능한 너비) */}
+      <div 
+        className="flex flex-col border-r border-slate-200"
+        style={{ width: `${leftPanelWidth}px` }}
+      >
+        <div className="flex-1 p-4 overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-6 flex-shrink-0">
-            <h1 className="text-2xl font-bold text-slate-800">Afterwon 1.0</h1>
+            <h1 className="text-xl font-bold text-slate-800">Afterwon 1.0</h1>
           </div>
 
           {/* Chat History - 스크롤 가능한 영역 */}
@@ -164,11 +223,12 @@ const CreationPage = ({ startNewChat }) => {
                 className={`flex ${chat.type === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-3xl px-4 py-3 rounded-2xl ${
+                  className={`max-w-full px-4 py-3 rounded-2xl ${
                     chat.type === 'user'
                       ? 'bg-slate-600 text-white'
                       : 'bg-slate-100 text-slate-800'
                   }`}
+                  style={{ maxWidth: `${leftPanelWidth - 64}px` }}
                 >
                   <p className="text-sm leading-relaxed whitespace-pre-line">{chat.message}</p>
                 </div>
@@ -227,7 +287,7 @@ const CreationPage = ({ startNewChat }) => {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe what you want to create..."
+                  placeholder="Describe your idea..."
                   className="w-full resize-none border-none outline-none bg-transparent text-slate-800 placeholder-slate-500 text-sm"
                   rows={3}
                 />
@@ -266,6 +326,103 @@ const CreationPage = ({ startNewChat }) => {
             <p className="text-xs text-slate-500 mt-2 text-center">
               Chat Mode can make mistakes. Double check responses.
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Resizable Divider */}
+      <div
+        className="w-0.5 bg-slate-200 hover:bg-slate-400 cursor-col-resize transition-colors duration-200 relative group"
+        onMouseDown={handleMouseDown}
+        onTouchStart={(e) => {
+          e.preventDefault()
+          const touch = e.touches[0]
+          setIsResizing(true)
+          document.body.style.userSelect = 'none'
+        }}
+        onTouchMove={(e) => {
+          if (!isResizing) return
+          e.preventDefault()
+          const touch = e.touches[0]
+          const newWidth = touch.clientX
+          const minWidth = 200
+          const maxWidth = window.innerWidth * 0.8
+          
+          if (newWidth >= minWidth && newWidth <= maxWidth) {
+            setLeftPanelWidth(newWidth)
+          }
+        }}
+        onTouchEnd={() => {
+          setIsResizing(false)
+          document.body.style.userSelect = ''
+        }}
+        title="드래그하여 채팅창 크기 조절"
+        style={{ 
+          cursor: isResizing ? 'col-resize' : 'col-resize',
+          backgroundColor: isResizing ? '#94a3b8' : '#e2e8f0'
+        }}
+      >
+        {/* 드래그 핸들 시각적 표시 */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <div className="w-0.5 h-12 bg-slate-400 rounded-full"></div>
+        </div>
+        
+        {/* 확장된 드래그 영역 (투명하지만 드래그 가능) */}
+        <div 
+          className="absolute inset-0 w-8 -left-4 cursor-col-resize"
+          style={{ pointerEvents: 'auto' }}
+        />
+      </div>
+
+      {/* Right Section - AI Generated Content & Code */}
+      <div className="flex-1 flex flex-col">
+        <div className="flex-1 p-6 overflow-hidden flex flex-col">
+          {/* Header with Segment Control */}
+          <div className="flex items-center justify-between mb-6 flex-shrink-0">
+            {/* Segment Control */}
+            <div className="flex bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setActiveSegment('image')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                  activeSegment === 'image'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                Image
+              </button>
+              <button
+                onClick={() => setActiveSegment('code')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                  activeSegment === 'code'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                Code
+              </button>
+            </div>
+          </div>
+
+          {/* Content Area - Image or Code based on activeSegment */}
+          <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden">
+            {activeSegment === 'image' ? (
+              /* Image Content */
+              <div className="h-full bg-slate-50 p-6 flex items-center justify-center">
+                <div className="text-center text-slate-500">
+                  <p className="text-lg mb-2">AI-generated images and videos will appear here</p>
+                  <p className="text-sm">Request in chat to see your results</p>
+                </div>
+              </div>
+            ) : (
+              /* Code Content */
+              <div className="h-full bg-slate-900 p-6 flex items-center justify-center">
+                <div className="text-center text-slate-400">
+                  <p className="text-lg mb-2">Generated code will appear here</p>
+                  <p className="text-sm">View React, HTML, CSS, and other code snippets</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
