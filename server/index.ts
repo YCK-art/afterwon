@@ -6,6 +6,7 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import generateRouter from "./routes/generate";
+import proxyRouter from "./routes/proxy";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,6 +17,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // 라우트
 app.use("/api", generateRouter);
+app.use("/api", proxyRouter);
 
 // 헬스체크
 app.get("/health", (req, res) => {

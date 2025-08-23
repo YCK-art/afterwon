@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 프로젝트별 사용자 폴더 접근 제어
+    match /projects/{projectName}/users/{userId}/{allPaths=**} {
+      // 인증된 사용자만 자신의 폴더에 접근 가능
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 파일 크기 제한 (10MB)
+      allow write: if request.resource.size < 10 * 1024 * 1024;
+      
+      // 이미지 파일만 허용
+      allow write: if request.resource.contentType.matches('image/.*');
+    }
+    
+    // 공개 읽기 전용 폴더 (필요시)
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // 기본적으로 모든 접근 차단
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+} 

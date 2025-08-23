@@ -36,8 +36,8 @@ const TopBar = ({ onGetStarted }) => {
             </div>
           </div>
 
-          {/* Right Section - Get Started Button */}
-          <div className="flex items-center">
+          {/* Right Section - Get Started Button (Desktop only) */}
+          <div className="hidden md:flex items-center">
             <button
               onClick={onGetStarted}
               className="bg-white text-gray-900 px-4 py-1.5 rounded-full font-medium hover:bg-gray-100 transition-colors duration-200 text-sm"
@@ -74,6 +74,20 @@ const TopBar = ({ onGetStarted }) => {
                   {item.label}
                 </a>
               ))}
+              
+              {/* Mobile Get Started Button */}
+              <div className="pt-4 pb-2">
+                <button
+                  onClick={() => {
+                    onGetStarted()
+                    setIsMenuOpen(false)
+                  }}
+                  className="w-full bg-white text-gray-900 px-6 py-3 rounded-full font-medium hover:bg-gray-100 transition-colors duration-200 text-sm"
+                  style={{ fontFamily: 'ProductSans, sans-serif' }}
+                >
+                  Get Started
+                </button>
+              </div>
             </div>
           </div>
         )}

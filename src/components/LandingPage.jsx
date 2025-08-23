@@ -278,6 +278,26 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
           </div>
         </div>
       </div>
+      
+      {/* Bottom Get Started Button */}
+      <div className="py-16 bg-black">
+        <div className="max-w-4xl mx-auto text-center px-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6" style={{ fontFamily: 'Doto, sans-serif' }}>
+            Ready to Create Something Amazing?
+          </h2>
+          <p className="text-lg text-gray-300 mb-8 max-w-2xl mx-auto">
+            Join thousands of creators who are already using Afterwon to bring their ideas to life.
+          </p>
+          <button
+            onClick={handleGetStarted}
+            className="bg-white text-black px-12 py-4 rounded-full font-bold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-2xl hover:shadow-3xl"
+            style={{ fontFamily: 'ProductSans, sans-serif' }}
+          >
+            Get Started Now
+          </button>
+        </div>
+      </div>
+      
       <Footer />
     </div>
   )

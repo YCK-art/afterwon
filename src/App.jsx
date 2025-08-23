@@ -13,7 +13,9 @@ function App() {
     style: '',
     type: '',
     size: '',
-    extras: []
+    'Transparent Background': false,
+    'High Resolution': false,
+    'Vector Format': false
   })
 
   const [prompt, setPrompt] = useState('')
@@ -66,7 +68,9 @@ function App() {
       style: '',
       type: '',
       size: '',
-      extras: []
+      'Transparent Background': false,
+      'High Resolution': false,
+      'Vector Format': false
     })
     setPrompt('')
   }
@@ -79,7 +83,9 @@ function App() {
       style: '',
       type: '',
       size: '',
-      extras: []
+      'Transparent Background': false,
+      'High Resolution': false,
+      'Vector Format': false
     })
     setPrompt('')
   }
@@ -92,7 +98,9 @@ function App() {
       style: '',
       type: '',
       size: '',
-      extras: []
+      'Transparent Background': false,
+      'High Resolution': false,
+      'Vector Format': false
     })
     setPrompt('')
   }
@@ -110,7 +118,9 @@ function App() {
       style: '',
       type: '',
       size: '',
-      extras: []
+      'Transparent Background': false,
+      'High Resolution': false,
+      'Vector Format': false
     })
     setPrompt('')
   }

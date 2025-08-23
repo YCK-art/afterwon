@@ -47,21 +47,29 @@ router.post("/generate", async (req, res) => {
       STYLE: ${input.style} - ${getStyleDescription(input.style)}
       TYPE: ${input.type}
       
+      DESIGN APPROACH:
+      - Create a VECTOR-STYLE design that looks like it was made in Adobe Illustrator or similar vector software
+      - Use clean, geometric shapes and smooth curves typical of vector graphics
+      - Apply flat design principles with minimal shadows and depth
+      - Focus on crisp, clean edges and solid color fills
+      
       QUALITY REQUIREMENTS:
       - Ultra-high definition, detailed, professional design
       - Clean, centered composition with no background clutter
       - Vibrant, professional color palette
-      - Professional studio lighting and shadows
       - Sharp, crisp details with no blur or pixelation
       - Professional graphic design quality
       
       CRITICAL REQUIREMENTS:
-      - NO BACKGROUND: Create the ${input.type.toLowerCase()} on a completely transparent background
+      - VECTOR STYLE: Make it look like a vector graphic, not a photograph
+      - NO BACKGROUND: Create the ${input.type.toLowerCase()} on a completely transparent/white background
       - TRANSPARENT BACKGROUND: The image must have no background, background color, or background elements
       - CENTERED DESIGN: Place the main subject in the center with no background distractions
       - CLEAN EDGES: Ensure the design has clean, crisp edges without any background elements
+      - FLAT DESIGN: Use flat design principles with minimal 3D effects or shadows
+      - SOLID COLORS: Use solid, vibrant colors typical of vector graphics
       
-      IMPORTANT: Focus on the main request "${input.description}" and make it the central element of the design. The final image must have a completely transparent background with no background colors, patterns, or elements.`;
+      IMPORTANT: Focus on the main request "${input.description}" and make it the central element of the design. The final image must look like a professional vector graphic with a completely transparent background, no background colors, patterns, or elements. Make it appear as if it was created in vector design software.`;
       
       // DALL-E 3 크기 제한에 맞춰 크기 조정
       // DALL-E 3는 1024x1024만 지원
@@ -73,7 +81,7 @@ router.post("/generate", async (req, res) => {
         n: 1,
         size: dalleSize,
         quality: "hd",
-        style: "natural"
+        style: "vivid"
       });
 
       dalleImageUrl = imageGeneration.data?.[0]?.url;
@@ -199,11 +207,11 @@ router.post("/download-image", async (req, res) => {
     // 이미지 데이터 전송
     res.send(Buffer.from(imageBuffer));
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Image download error:', error);
     res.status(500).json({ 
       error: 'Failed to download image',
-      message: error.message 
+      message: error.message || 'Unknown error'
     });
   }
 });

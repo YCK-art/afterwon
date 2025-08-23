@@ -4,6 +4,7 @@ import { generateAsset } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
 import { saveGenerationHistory } from '../utils/firestore'
 import { uploadImageToStorage } from '../utils/storage'
+import ImageUploadTest from './ImageUploadTest'
 
 const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => {
   const { currentUser } = useAuth()
@@ -49,6 +50,9 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   const [activeCodeTab, setActiveCodeTab] = useState('svg')
   const [copiedCode, setCopiedCode] = useState(false)
   const [showDownloadDropdown, setShowDownloadDropdown] = useState(false) // 다운로드 드롭다운 표시 상태
+  
+  // 테스트 모드 상태
+  const [showTestMode, setShowTestMode] = useState(false)
 
   // 템플릿 옵션들
   const typeOptions = ['Icon', 'Emoji', 'Illustration', 'Logo', 'Character']
@@ -134,20 +138,42 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
 
   // 새 채팅 시작 함수
   const handleNewChat = () => {
-    // 기존 채팅 내용을 보존하고 새로운 채팅 시작
-    const newChatHistory = [
-      {
-        id: Date.now(),
-        type: 'assistant',
-        message: '👋 Hello! I\'m ready to help you create amazing designs. What would you like to make today?',
-        timestamp: new Date().toLocaleTimeString(),
-        date: new Date()
-      }
-    ]
-    setChatHistory(newChatHistory)
+    console.log('Starting new chat...')
+    
+    // 모든 상태 초기화
+    setChatHistory([])
     setPrompt('')
+    setUploadedImages([])
     setGenerationResult(null)
-    saveChatToStorage(newChatHistory)
+    setGeneratedImages([])
+    setSelectedOptions({
+      type: '',
+      style: '',
+      size: '',
+      extras: []
+    })
+    
+    // localStorage에서 채팅 히스토리 제거
+    localStorage.removeItem('currentChatHistory')
+    
+    // 기본 환영 메시지 추가
+    const welcomeMessage = {
+      id: Date.now(),
+      type: 'assistant',
+      message: "Hello! I'm Afterwon 1.0, your creative AI assistant specializing in visual content creation. I can help you create stunning images, videos, and bring your creative ideas to life. What would you like to create today? Feel free to describe your vision or ask for suggestions to get started.",
+      timestamp: new Date().toLocaleTimeString(),
+      date: new Date()
+    }
+    
+    setChatHistory([welcomeMessage])
+    saveChatToStorage([welcomeMessage])
+    
+    // 사이드바의 선택된 생성 이력 초기화
+    if (window.setSelectedGenerationId) {
+      window.setSelectedGenerationId(null)
+    }
+    
+    console.log('New chat started successfully')
   }
 
   // 채팅 이력 로드 함수 (사이드바에서 호출)
@@ -193,10 +219,8 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     // 채팅 히스토리 설정
     setChatHistory(validHistory)
     
-    // 프롬프트 설정
-    if (promptText) {
-      setPrompt(promptText)
-    }
+    // 프롬프트는 입력창에 표시하지 않음 (이미 채팅 히스토리에 포함됨)
+    // setPrompt(promptText)
     
     // 생성 결과도 복원
     if (generationResult) {
@@ -396,40 +420,77 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
       console.log('Sending request:', request) // 디버깅용
       
       const result = await generateAsset(request)
+      console.log('Generation successful:', result)
+      
+      // 응답 구조 검증
+      if (!result || !result.asset) {
+        throw new Error('Invalid response structure from server')
+      }
+      
       setGenerationResult(result)
       
       // 생성된 이미지를 히스토리에 추가
       if (result.asset.dalleImage) {
+        console.log('DALL-E image found:', result.asset.dalleImage)
         addGeneratedImage({
           imageUrl: result.asset.dalleImage,
           prompt: prompt,
           options: selectedOptions,
           timestamp: new Date()
         })
+      } else {
+        console.log('No DALL-E image in response')
       }
       
       // Firestore에 생성 이력 저장
-      if (currentUser) {
-        try {
-          // DALL-E 이미지를 Firebase Storage에 저장
-          let storageImageUrl = null
-          if (result.asset.dalleImage) {
+      if (currentUser && result.asset.dalleImage) {
+                  try {
+            console.log('Starting Firebase Storage upload process...')
+            
+            // DALL-E 이미지를 Firebase Storage에 저장 (개선된 버전)
+            let storageImageUrl = null
+            let storagePath = null
+            let imageMetadata = null
+            let uploadStatus = 'pending'
+            
             try {
               console.log('Starting Firebase Storage upload for:', result.asset.dalleImage)
-              storageImageUrl = await uploadImageToStorage(
-                result.asset.dalleImage, 
-                currentUser.uid, 
-                Date.now().toString()
-              )
-              console.log('✅ Image uploaded to Firebase Storage:', storageImageUrl)
-            } catch (uploadError) {
-              console.error('❌ Failed to upload image to storage:', uploadError)
-              // 업로드 실패 시 DALL-E 원본 URL 사용
-              storageImageUrl = result.asset.dalleImage
-              console.log('Using DALL-E original URL as fallback:', storageImageUrl)
-            }
-          } else {
-            console.log('No DALL-E image found in result:', result.asset)
+            
+            // 프로젝트명과 고유한 생성 ID 생성
+            const projectName = 'iconic'
+            const generationId = `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            
+
+            
+            const uploadResult = await uploadImageToStorage(
+              result.asset.dalleImage, 
+              currentUser.uid, 
+              generationId,
+              projectName
+            )
+            
+            storageImageUrl = uploadResult.downloadURL
+            storagePath = uploadResult.storagePath
+            imageMetadata = uploadResult.metadata
+            uploadStatus = 'success'
+            
+                          console.log('Image uploaded to Firebase Storage successfully!')
+              console.log('Storage Path:', storagePath)
+              console.log('Download URL:', storageImageUrl)
+            
+
+            
+                      } catch (uploadError) {
+              console.error('Failed to upload image to storage:', uploadError)
+              console.log('Using DALL-E original URL as fallback')
+              uploadStatus = 'failed'
+            
+            // 업로드 실패 시 DALL-E 원본 URL 사용
+            storageImageUrl = result.asset.dalleImage
+            storagePath = null
+            imageMetadata = null
+            
+
           }
           
           // 완전한 채팅 히스토리 구성 (사용자 프롬프트 + AI 응답 포함)
@@ -445,7 +506,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
             {
               id: Date.now() + 2,
               type: 'assistant',
-              message: `✅ 생성 완료! "${prompt}"에 대한 이미지를 생성했습니다. 오른쪽 패널에서 결과를 확인하세요.`,
+              message: `Generation completed! Image for "${prompt}" has been created. Check the result in the right panel.`,
               timestamp: new Date().toLocaleTimeString(),
               date: new Date()
             }
@@ -463,14 +524,27 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
               ...result,
               asset: {
                 ...result.asset,
-                storageImageUrl: storageImageUrl // Storage URL 추가
+                storageImageUrl: storageImageUrl, // Storage URL
+                storagePath: storagePath, // Storage 경로
+                dalleImage: result.asset.dalleImage // 원본 DALL-E 이미지 URL
               }
             },
             chatHistory: completeChatHistory,
-            createdAt: new Date()
+            createdAt: new Date(),
+            // 추가 메타데이터
+            metadata: {
+              projectName: 'iconic',
+              generationId: `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              storageInfo: {
+                uploaded: !!storageImageUrl,
+                storagePath: storagePath,
+                originalUrl: result.asset.dalleImage,
+                uploadStatus: uploadStatus
+              }
+            }
           }
           
-          const generationId = await saveGenerationHistory(currentUser.uid, generationData)
+          const generationId = await saveGenerationHistory(currentUser.uid, generationData, 'iconic')
           console.log('Generation history saved to Firestore with ID:', generationId)
           
           // 사이드바 새로고침
@@ -480,7 +554,9 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
         } catch (error) {
           console.error('Failed to save generation history:', error)
         }
-      }
+                } else {
+            console.log('No DALL-E image found in result or user not logged in')
+          }
       
       // 로딩 메시지 제거하고 생성 완료 메시지 추가 (기존 히스토리 유지)
       setChatHistory(prev => {
@@ -488,7 +564,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
         const updatedHistory = [...filteredHistory, {
           id: Date.now() + 2,
           type: 'assistant',
-          message: `✅ 생성 완료! "${prompt}"에 대한 이미지를 생성했습니다. 오른쪽 패널에서 결과를 확인하세요.`,
+          message: `Generation completed! Image for "${prompt}" has been created. Check the result in the right panel.`,
           timestamp: new Date().toLocaleTimeString(),
           date: new Date()
         }]
@@ -504,7 +580,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
       const errorMessage = {
         id: Date.now() + 2,
         type: 'assistant',
-        message: `❌ 생성 실패: ${error.message || '알 수 없는 오류'}. 다시 시도해주세요.`,
+        message: `Generation failed: ${error.message || 'Unknown error'}. Please try again.`,
         timestamp: new Date(),
         date: new Date()
       }
@@ -604,9 +680,10 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
         const { history, prompt: promptText, generationResult } = JSON.parse(tempData)
         if (history && Array.isArray(history)) {
           setChatHistory(history)
-          if (promptText) {
-            setPrompt(promptText)
-          }
+          // 프롬프트는 입력창에 표시하지 않음 (이미 채팅 히스토리에 포함됨)
+          // if (promptText) {
+          //   setPrompt(promptText)
+          // }
           if (generationResult) {
             setGenerationResult(generationResult)
           }
@@ -625,6 +702,16 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     
     // 생성된 이미지들도 로드
     loadGeneratedImages()
+    
+    // window 객체에 함수 등록 (사이드바에서 호출 가능하도록)
+    window.handleNewChat = handleNewChat
+    window.loadChatHistoryFromSidebar = loadChatHistory
+    
+    // 컴포넌트 언마운트 시 정리
+    return () => {
+      delete window.handleNewChat
+      delete window.loadChatHistoryFromSidebar
+    }
   }, [])
 
   // 다운로드 드롭다운 외부 클릭 시 닫기
@@ -657,7 +744,8 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   // activeSegment 변경 함수 (패널 너비 유지)
   const handleSegmentChange = (segment) => {
     setActiveSegment(segment)
-    // leftPanelWidth는 변경하지 않음 - 현재 사용자 설정 유지
+    // leftPanelWidth는 변경하지 않음 - 사용자가 설정한 구분선 위치 그대로 유지
+    // Code 세그먼트에서도 사용자가 드래그한 구분선 위치를 그대로 사용
   }
 
   // 컴포넌트 마운트 시 마우스 이벤트 리스너 추가
@@ -926,6 +1014,19 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
           {/* Header */}
           <div className="flex items-center justify-between mb-6 flex-shrink-0">
             <h1 className="text-xl font-bold text-slate-800">Afterwon 1.0</h1>
+            <div className="flex items-center space-x-2">
+              {/* 테스트 모드 토글 버튼 */}
+              <button
+                onClick={() => setShowTestMode(!showTestMode)}
+                className={`px-3 py-1.5 rounded-lg transition-colors text-xs font-medium ${
+                  showTestMode 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                🧪 Test Mode
+              </button>
+            </div>
           </div>
 
           {/* Chat History - 스크롤 가능한 영역 */}
@@ -958,6 +1059,13 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
                 </div>
               </div>
             ))}
+            
+            {/* 테스트 모드 컴포넌트 */}
+            {showTestMode && (
+              <div className="mt-4">
+                <ImageUploadTest />
+              </div>
+            )}
           </div>
 
           {/* Uploaded Images Display - 채팅창 위쪽에 표시 */}
@@ -1161,7 +1269,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
 
       {/* Resizable Divider */}
       <div
-        className="w-0.5 bg-slate-200 hover:bg-slate-400 cursor-col-resize transition-colors duration-200 relative group"
+        className="w-1 bg-slate-300 hover:bg-slate-500 cursor-col-resize transition-colors duration-200 relative group z-10"
         onMouseDown={handleMouseDown}
         onTouchStart={(e) => {
           e.preventDefault()
@@ -1187,18 +1295,18 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
         }}
         title="드래그하여 채팅창 크기 조절"
         style={{ 
-          cursor: isResizing ? 'col-resize' : 'col-resize',
-          backgroundColor: isResizing ? '#94a3b8' : '#e2e8f0'
+          cursor: 'col-resize',
+          backgroundColor: isResizing ? '#64748b' : '#cbd5e1'
         }}
       >
         {/* 드래그 핸들 시각적 표시 */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="w-0.5 h-12 bg-slate-400 rounded-full"></div>
+          <div className="w-1 h-16 bg-slate-500 rounded-full"></div>
         </div>
         
         {/* 확장된 드래그 영역 (투명하지만 드래그 가능) */}
         <div 
-          className="absolute inset-0 w-8 -left-4 cursor-col-resize"
+          className="absolute inset-0 w-12 -left-6 cursor-col-resize"
           style={{ pointerEvents: 'auto' }}
         />
       </div>
@@ -1306,10 +1414,10 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
                         </div>
                       </div>
                     </div>
-                    <div className="flex-1 flex flex-col bg-checkerboard rounded-lg overflow-hidden">
+                    <div className="flex-1 flex flex-col bg-slate-50 rounded-lg overflow-hidden">
                       {/* 현재 생성된 이미지 표시 */}
                       {(generationResult.asset.storageImageUrl || generationResult.asset.dalleImage) && (
-                        <div className="flex-1 flex items-center justify-center p-4">
+                        <div className="flex justify-center pt-6 pb-4">
                           <img 
                             src={generationResult.asset.storageImageUrl || generationResult.asset.dalleImage}
                             alt="AI Generated Image"
@@ -1374,8 +1482,8 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
                         ✅ Synced with preview (checksum: {generationResult.meta.checksum.substring(0, 8)}...)
                       </div>
                     </div>
-                    <div className="flex-1 bg-slate-800 rounded-lg p-4 overflow-auto">
-                      <pre className="text-sm text-slate-300 font-mono">
+                    <div className="flex-1 bg-slate-800 rounded-lg p-4 overflow-x-auto overflow-y-auto">
+                      <pre className="text-sm text-slate-300 font-mono whitespace-pre">
                         <code>{generationResult.code[activeCodeTab]}</code>
                       </pre>
                     </div>

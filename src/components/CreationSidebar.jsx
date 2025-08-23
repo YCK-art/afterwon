@@ -97,7 +97,10 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
     // 선택된 생성 이력 초기화
     setSelectedGenerationId(null)
     
-    if (startNewChat) {
+    // window 객체를 통해 CreationPage의 handleNewChat 함수 호출
+    if (window.handleNewChat) {
+      window.handleNewChat()
+    } else if (startNewChat) {
       startNewChat()
     }
   }
@@ -148,6 +151,14 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
   // 컴포넌트 마운트 시 및 refreshTrigger 변경 시 생성 이력 불러오기
   useEffect(() => {
     loadGenerations()
+    
+    // window 객체에 함수 등록 (CreationPage에서 호출 가능하도록)
+    window.setSelectedGenerationId = setSelectedGenerationId
+    
+    // 컴포넌트 언마운트 시 정리
+    return () => {
+      delete window.setSelectedGenerationId
+    }
   }, [currentUser, refreshTrigger])
 
   // 생성 이력을 날짜별로 그룹핑
@@ -238,7 +249,8 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
               <a
                 href="#"
                 className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-lg text-sm transition-all duration-300 ${
-                  currentPage === item.page
+                  (item.action === 'newChat' && selectedGenerationId === null) || 
+                  (item.page === currentPage && selectedGenerationId === null)
                     ? 'bg-slate-200 text-slate-800'
                     : 'text-slate-700 hover:text-slate-800 hover:bg-slate-200'
                 }`}
@@ -286,6 +298,7 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
                             }`}
                             title={generation.prompt}
                           >
+                            {/* 텍스트 내용 - 왼쪽 */}
                             <div className="flex-1 min-w-0">
                               <div className="text-xs text-slate-700 truncate">
                                 {generation.prompt || 'Untitled'}
@@ -294,22 +307,48 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
                                 {generation.options?.style} • {generation.options?.size}
                               </div>
                             </div>
-                            {/* 생성된 이미지 썸네일로 ImageIcon 대체 */}
-                            {generation.result?.asset?.storageImageUrl ? (
-                              <img 
-                                src={generation.result.asset.storageImageUrl}
-                                alt="Generated preview"
-                                className={`w-8 h-8 rounded object-cover flex-shrink-0 ${
-                                  selectedGenerationId === generation.id
-                                    ? 'ring-2 ring-blue-300'
-                                    : ''
-                                }`}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded bg-slate-200 flex-shrink-0 flex items-center justify-center">
-                                <span className="text-xs text-slate-500">?</span>
-                              </div>
-                            )}
+                            
+                            {/* 이미지 썸네일 - 오른쪽 끝 */}
+                            <div className="flex-shrink-0 ml-2">
+                              {(() => {
+                                // 우선순위: Storage URL > DALL-E URL > 기본 아이콘
+                                const imageUrl = generation.result?.asset?.storageImageUrl || 
+                                               generation.result?.asset?.dalleImage ||
+                                               null
+                                
+                                if (imageUrl) {
+                                  return (
+                                    <div className="relative">
+                                      <img 
+                                        src={imageUrl}
+                                        alt="Generated preview"
+                                        className={`w-8 h-8 rounded object-cover ${
+                                          selectedGenerationId === generation.id
+                                            ? 'ring-2 ring-blue-300'
+                                            : ''
+                                        }`}
+                                        onError={(e) => {
+                                          // 이미지 로드 실패 시 기본 아이콘으로 대체
+                                          e.target.style.display = 'none'
+                                          const fallback = e.target.parentElement.querySelector('.image-fallback')
+                                          if (fallback) fallback.style.display = 'flex'
+                                        }}
+                                      />
+                                      {/* Fallback 이미지 (기본적으로 숨김) */}
+                                      <div className="image-fallback w-8 h-8 rounded bg-slate-200 flex items-center justify-center absolute top-0 left-0" style={{display: 'none'}}>
+                                        <ImageIcon className="w-4 h-4 text-slate-500" />
+                                      </div>
+                                    </div>
+                                  )
+                                }
+                                
+                                return (
+                                  <div className="w-8 h-8 rounded bg-slate-200 flex items-center justify-center">
+                                    <ImageIcon className="w-4 h-4 text-slate-500" />
+                                  </div>
+                                )
+                              })()}
+                            </div>
                           </button>
                         </li>
                       ))}
@@ -321,6 +360,7 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
               <div className="text-xs text-slate-500 text-center py-2">No generations yet</div>
             )}
           </div>
+        )}
         )}
 
         {/* Recent Activity - 제거됨 (Firestore 기반으로 대체) */}

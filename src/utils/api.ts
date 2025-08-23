@@ -14,6 +14,7 @@ export interface GenerationResponse {
     svg: string;
     png: string | null;
     jpeg: string | null;
+    dalleImage?: string; // DALL-E 이미지 URL 추가
   };
   code: {
     svg: string;
@@ -27,12 +28,16 @@ export interface GenerationResponse {
     size: string;
     extras: string[];
     checksum: string;
+    description?: string; // 설명 추가
   };
   message?: string;
 }
 
 export async function generateAsset(request: GenerationRequest): Promise<GenerationResponse> {
   try {
+    console.log('🚀 Sending generation request to:', `${API_BASE_URL}/generate`)
+    console.log('📝 Request data:', request)
+    
     const response = await fetch(`${API_BASE_URL}/generate`, {
       method: 'POST',
       headers: {
@@ -41,15 +46,41 @@ export async function generateAsset(request: GenerationRequest): Promise<Generat
       body: JSON.stringify(request),
     });
 
+    console.log('📡 Response status:', response.status)
+    console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()))
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Generation failed');
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+      
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.message || errorMessage
+      } catch (parseError) {
+        console.warn('Failed to parse error response:', parseError)
+      }
+      
+      throw new Error(errorMessage)
     }
 
-    return await response.json();
+    const responseText = await response.text()
+    console.log('📄 Raw response:', responseText.substring(0, 200) + '...')
+    
+    if (!responseText.trim()) {
+      throw new Error('Empty response from server')
+    }
+
+    try {
+      const result = JSON.parse(responseText)
+      console.log('✅ Parsed response successfully')
+      return result
+    } catch (parseError) {
+      console.error('❌ JSON parse error:', parseError)
+      console.error('❌ Response text:', responseText)
+      throw new Error(`Failed to parse server response: ${parseError.message}`)
+    }
   } catch (error) {
-    console.error('API Error:', error);
-    throw error;
+    console.error('❌ API Error:', error)
+    throw error
   }
 }
 
