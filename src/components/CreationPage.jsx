@@ -5,6 +5,27 @@ import { useAuth } from '../contexts/AuthContext'
 import { saveGenerationHistory } from '../utils/firestore'
 import { uploadImageToStorage } from '../utils/storage'
 import ImageUploadTest from './ImageUploadTest'
+import ImageCardStack from './ImageCardStack'
+
+// ✅ 안전 유틸: 너무 큰 문자열/데이터 URL은 Firestore에 저장하지 않도록
+const isDataUrl = (v) => typeof v === 'string' && v.startsWith('data:')
+const safeShort = (v, max = 120_000) => { // 필요시 길이 제한
+  if (typeof v !== 'string') return ''
+  return v.length > max ? v.slice(0, max) : v
+}
+
+// ✅ 공용 변환 유틸: 채팅 히스토리를 Firestore 형식으로 정규화
+const normalizeChatForFirestore = (history) =>
+  (history || []).map(m => ({
+    id: String(m.id ?? Date.now()),
+    type: String(m.type ?? 'assistant'),
+    message: String(m.message ?? ''),
+    timestamp: String(m.timestamp ?? new Date().toLocaleTimeString()),
+    date: m.date instanceof Date ? m.date.toISOString()
+         : (typeof m.date === 'string' ? m.date : new Date().toISOString()),
+    isLoading: !!m.isLoading,
+    subtype: m.subtype ? String(m.subtype) : ''   // ✅ 알림 종류 보존
+  }))
 
 const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => {
   const { currentUser } = useAuth()
@@ -13,6 +34,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   const [activeSegment, setActiveSegment] = useState('image') // 'image' 또는 'code'
   const [leftPanelWidth, setLeftPanelWidth] = useState(320)
   const [isResizing, setIsResizing] = useState(false)
+  const chatHistoryRef = useRef([]) // ✅ 최신 chatHistory를 안전하게 읽기 위한 ref 추가
   
 
   
@@ -46,7 +68,9 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   // AI 생성 관련 상태
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationResult, setGenerationResult] = useState(null)
-  const [generatedImages, setGeneratedImages] = useState([]) // 생성된 모든 이미지 저장
+  const [generatedImages, setGeneratedImages] = useState([]) // 현재 채팅방의 이미지만 저장
+  const [currentChatId, setCurrentChatId] = useState(null) // 현재 채팅방 ID
+  const [currentGenerationDocId, setCurrentGenerationDocId] = useState(null) // ✅ 현재 진행 중인 문서 ID
   const [activeCodeTab, setActiveCodeTab] = useState('svg')
   const [copiedCode, setCopiedCode] = useState(false)
   const [showDownloadDropdown, setShowDownloadDropdown] = useState(false) // 다운로드 드롭다운 표시 상태
@@ -57,7 +81,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   // 템플릿 옵션들
   const typeOptions = ['Icon', 'Emoji', 'Illustration', 'Logo', 'Character']
   const styleOptions = ['Liquid Glass', 'Neon Glow', 'Pixel Art', 'Skeuomorphism', '3D', 'Flat', 'Gradient', 'Minimalist']
-  const sizeOptions = ['512px', '1024px'] // DALL-E 3 지원 크기로 제한
+  const sizeOptions = ['256px', '512px', '1024px'] // gpt-image-1 지원 크기
   const extraOptions = ['Transparent Background', 'High Resolution', 'Vector Format']
 
   // 옵션 선택 처리
@@ -93,6 +117,64 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     ).length
   }
 
+  // 페이지 로드 시 디폴트 상태 정리 및 새 채팅 시작
+  useEffect(() => {
+    const clearDefaultData = () => {
+      try {
+        // 디폴트 상태에서 불필요한 데이터 제거
+        localStorage.removeItem('currentChatHistory')
+        localStorage.removeItem('chatHistory')
+        localStorage.removeItem('tempChatHistory')
+        localStorage.removeItem('generatedImages')
+        
+        // 채팅별 이미지 데이터 정리
+        const keys = Object.keys(localStorage)
+        keys.forEach(key => {
+          if (key.startsWith('chatImages_')) {
+            localStorage.removeItem(key)
+          }
+        })
+        
+        // 생성 관련 임시 데이터 정리
+        localStorage.removeItem('creationPrompt')
+        localStorage.removeItem('creationOptions')
+        localStorage.removeItem('startGenerationImmediately')
+        
+        console.log('Default data cleared from localStorage')
+      } catch (error) {
+        console.error('Failed to clear default data:', error)
+      }
+    }
+    
+    // 페이지 로드 시 한 번만 실행
+    clearDefaultData()
+    
+    // 기본 환영 메시지만 설정 (handleNewChat 호출하지 않음)
+    const welcomeMessage = {
+      id: Date.now(),
+      type: 'assistant',
+      message: "Hello! I'm Afterwon 1.0, your creative AI assistant specializing in visual content creation. I can help you create stunning images, videos, and bring your creative ideas to life. What would you like to create today? Feel free to describe your vision or ask for suggestions to get started.",
+      timestamp: new Date().toLocaleTimeString(),
+      date: new Date()
+    }
+    
+    setChatHistory([welcomeMessage])
+    setGeneratedImages([])
+    setGenerationResult(null)
+    setPrompt('')
+    setUploadedImages([])
+    setCurrentChatId(null)
+    setCurrentGenerationDocId(null) // ✅ 진행 중인 문서 ID 초기화
+    setSelectedOptions({
+      type: '',
+      style: '',
+      size: '',
+      extras: []
+    })
+    
+    console.log('Default state initialized')
+  }, [])
+
   // 채팅 내용을 localStorage에 저장하는 함수
   const saveChatToStorage = (newChatHistory) => {
     try {
@@ -104,37 +186,59 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     }
   }
 
-  // 생성된 이미지를 히스토리에 추가하는 함수
+  // 생성된 이미지를 히스토리에 추가하는 함수 (localStorage 용량 제한)
   const addGeneratedImage = (imageData) => {
     const newImage = {
-      id: Date.now(),
-      ...imageData,
-      timestamp: new Date()
+      id: imageData.id || Date.now(),
+      imageUrl: imageData.imageUrl,
+      prompt: imageData.prompt,
+      options: imageData.options,
+      timestamp: imageData.timestamp || new Date(),
+      dalleImage: imageData.dalleImage,
+      storageImageUrl: imageData.storageImageUrl,
+      chatId: currentChatId || 'default' // 현재 채팅방 ID 추가
     }
+    
+    // 현재 채팅방의 이미지 목록에 추가
     setGeneratedImages(prev => [...prev, newImage])
     
-    // localStorage에도 저장
+    // localStorage에 채팅방별로 저장 (용량 제한 포함)
     try {
-      const savedImages = JSON.parse(localStorage.getItem('generatedImages') || '[]')
-      savedImages.push(newImage)
-      localStorage.setItem('generatedImages', JSON.stringify(savedImages))
+      const chatId = currentChatId || 'default'
+      const chatImages = JSON.parse(localStorage.getItem(`chatImages_${chatId}`) || '[]')
+      
+      // 최대 10개 이미지만 유지 (용량 절약)
+      if (chatImages.length >= 10) {
+        chatImages.shift() // 가장 오래된 이미지 제거
+      }
+      
+      chatImages.push(newImage)
+      
+      // 이미지 데이터를 간소화하여 저장 (용량 절약)
+      const simplifiedImage = {
+        id: newImage.id,
+        prompt: newImage.prompt,
+        timestamp: newImage.timestamp,
+        chatId: newImage.chatId
+        // imageUrl은 제거하여 용량 절약
+      }
+      
+      localStorage.setItem(`chatImages_${chatId}`, JSON.stringify([...chatImages.slice(-10).map(img => simplifiedImage)]))
+      console.log(`Saved new image to localStorage for chat: ${chatId}`)
     } catch (error) {
       console.error('Failed to save generated images:', error)
+      // localStorage 용량 초과 시 기존 데이터 정리
+      try {
+        const chatId = currentChatId || 'default'
+        localStorage.removeItem(`chatImages_${chatId}`)
+        console.log('Cleared localStorage due to quota exceeded')
+      } catch (clearError) {
+        console.error('Failed to clear localStorage:', clearError)
+      }
     }
   }
 
-  // localStorage에서 생성된 이미지들을 로드하는 함수
-  const loadGeneratedImages = () => {
-    try {
-      const savedImages = localStorage.getItem('generatedImages')
-      if (savedImages) {
-        const images = JSON.parse(savedImages)
-        setGeneratedImages(images)
-      }
-    } catch (error) {
-      console.error('Failed to load generated images:', error)
-    }
-  }
+  // 이미지 로드 함수는 제거 (디폴트 상태에서는 불필요)
 
   // 새 채팅 시작 함수
   const handleNewChat = () => {
@@ -146,6 +250,8 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     setUploadedImages([])
     setGenerationResult(null)
     setGeneratedImages([])
+    setCurrentChatId(null)
+    setCurrentGenerationDocId(null) // ✅ 진행 중인 문서 ID 초기화
     setSelectedOptions({
       type: '',
       style: '',
@@ -153,8 +259,34 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
       extras: []
     })
     
-    // localStorage에서 채팅 히스토리 제거
-    localStorage.removeItem('currentChatHistory')
+    // localStorage 완전 정리
+    const clearAllData = () => {
+      try {
+        localStorage.removeItem('currentChatHistory')
+        localStorage.removeItem('chatHistory')
+        localStorage.removeItem('tempChatHistory')
+        localStorage.removeItem('generatedImages')
+        
+        // 채팅별 이미지 데이터 정리
+        const keys = Object.keys(localStorage)
+        keys.forEach(key => {
+          if (key.startsWith('chatImages_')) {
+            localStorage.removeItem(key)
+          }
+        })
+        
+        // 생성 관련 임시 데이터 정리
+        localStorage.removeItem('creationPrompt')
+        localStorage.removeItem('creationOptions')
+        localStorage.removeItem('startGenerationImmediately')
+        
+        console.log('All data cleared from localStorage')
+      } catch (error) {
+        console.error('Failed to clear data:', error)
+      }
+    }
+    
+    clearAllData()
     
     // 기본 환영 메시지 추가
     const welcomeMessage = {
@@ -176,23 +308,31 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     console.log('New chat started successfully')
   }
 
+
+
   // 채팅 이력 로드 함수 (사이드바에서 호출)
-  const loadChatHistory = (history, promptText, generationResult) => {
-    console.log('Loading chat history:', { history, promptText, generationResult })
+  const loadChatHistory = (history, promptText, result) => {
+    console.log('Loading chat history:', { history, promptText, result })
     
-    // history가 유효한지 확인하고 안전하게 설정
-    let validHistory = []
+    // 새로운 채팅방 시작 시 이미지 목록 초기화
+    const chatId = promptText || 'default'
+    setCurrentChatId(chatId)
     
-    if (history && Array.isArray(history) && history.length > 0) {
-      // Firestore에서 로드된 데이터가 유효한지 확인
-      validHistory = history.map(msg => ({
-        id: msg.id || Date.now() + Math.random(),
-        type: msg.type || 'assistant',
-        message: msg.message || '',
-        timestamp: msg.timestamp || new Date().toLocaleTimeString(),
-        date: msg.date ? (msg.date.toDate ? msg.date.toDate() : new Date(msg.date)) : new Date()
-      }))
-    } else {
+            // history가 유효한지 확인하고 안전하게 설정
+        let validHistory = []
+        
+        if (history && Array.isArray(history) && history.length > 0) {
+          // Firestore에서 로드된 데이터가 유효한지 확인
+          validHistory = history.map(msg => ({
+            id: msg.id || Date.now() + Math.random(),
+            type: msg.type || 'assistant',
+            message: msg.message || '',
+            timestamp: msg.timestamp || new Date().toLocaleTimeString(),
+            date: msg.date ? (msg.date.toDate ? msg.date.toDate() : new Date(msg.date)) : new Date(),
+            isLoading: !!msg.isLoading,  // ✅ 추가
+            subtype: msg.subtype || ''                      // ✅ 알림 종류 복원
+          }))
+        } else {
       // history가 없거나 유효하지 않으면 기본 메시지 생성
       validHistory = [
         {
@@ -223,8 +363,73 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     // setPrompt(promptText)
     
     // 생성 결과도 복원
-    if (generationResult) {
-      setGenerationResult(generationResult)
+    if (result) {
+      console.log('Setting generationResult:', result)
+      setGenerationResult(result)
+      
+      // result에서 이미지 정보를 추출하여 generatedImages에 추가
+      if (result.asset) {
+        console.log('Extracting image data from result:', result.asset)
+        
+        const imageData = {
+          // 항상 generationId(예: gen_...)를 우선 사용
+          id: result?.generationId
+              || result?.metadata?.generationId
+              || currentGenerationDocId         // 그래도 없으면 같은 세션 문서 id
+              || 'unknown_generation',
+          imageUrl: result.asset.storageImageUrl || result.asset.dalleImage,
+          prompt: promptText,
+          options: result.options || {},
+          timestamp: result.createdAt ? new Date(result.createdAt) : new Date(),
+          dalleImage: result.asset.dalleImage,
+          storageImageUrl: result.asset.storageImageUrl,
+          chatId: chatId // 채팅방 ID 추가
+        }
+        
+        console.log('Created imageData:', imageData)
+        
+        // 현재 채팅방의 이미지만 표시하도록 설정
+        setGeneratedImages([imageData])
+        
+        // localStorage에 채팅방별로 저장
+        try {
+          const chatImages = JSON.parse(localStorage.getItem(`chatImages_${chatId}`) || '[]')
+          const exists = chatImages.some(img => img.id === imageData.id)
+          if (!exists) {
+            chatImages.push(imageData)
+            localStorage.setItem(`chatImages_${chatId}`, JSON.stringify(chatImages))
+            console.log(`Saved image to localStorage for chat: ${chatId}`)
+          }
+        } catch (error) {
+          console.error('Failed to save image to localStorage:', error)
+        }
+      } else {
+        console.log('No asset found in result:', result)
+        // 이미지가 없으면 빈 배열로 설정
+        setGeneratedImages([])
+      }
+    } else {
+      console.log('No result provided')
+      // 결과가 없으면 빈 배열로 설정
+      setGeneratedImages([])
+    }
+    
+    // ✅ 백필: 결과가 있는데 알림 이벤트가 없으면 하나 넣어준다.
+    const hasEvent = (validHistory || []).some(m => m.subtype === 'image_generated')
+    const hasAsset = !!(result?.asset?.storageImageUrl || result?.asset?.dalleImage)
+    if (!hasEvent && hasAsset) {
+      validHistory = [
+        ...validHistory,
+        {
+          id: `evt_${result?.generationId || result?.metadata?.generationId || 'unknown'}`,
+          type: 'assistant',
+          subtype: 'image_generated',
+          message: '🖼️ Image generated',
+          timestamp: new Date().toLocaleTimeString(),
+          date: new Date(),
+          isLoading: false
+        }
+      ]
     }
     
     // localStorage에도 저장
@@ -295,7 +500,7 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     }
   }, [onLoadChatHistory])
 
-  // 다운로드 함수를 상단으로 이동
+  // 다운로드 함수를 상단으로 이동 (GPT-Image-1 base64 데이터 지원)
   const downloadDalleImage = async (imageUrl, format = 'png') => {
     if (!imageUrl) {
       console.error('No image URL provided for download')
@@ -303,121 +508,230 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     }
 
     try {
-      // CORS 문제를 해결하기 위해 서버를 통해 이미지 다운로드
-      const downloadResponse = await fetch('/api/download-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageUrl: imageUrl,
-          format: format
-        })
-      })
-
-      if (!downloadResponse.ok) {
-        throw new Error(`Download failed: ${downloadResponse.status}`)
+      // base64 데이터 URL인 경우 직접 다운로드 (GPT-Image-1 응답)
+      if (imageUrl.startsWith('data:image/')) {
+        const link = document.createElement('a');
+        link.href = imageUrl;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        link.download = `ai-generated-image-${timestamp}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        console.log('Base64 image downloaded successfully');
+        return;
       }
 
-      const blob = await downloadResponse.blob()
+      // 일반 URL인 경우 기존 방식 사용
+      console.log('Attempting direct download...')
       
-      // 파일명 생성
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      const filename = `ai-generated-image-${timestamp}.${format}`
+      // Canvas를 사용하여 이미지 변환
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const img = new Image()
       
-      // 다운로드 링크 생성
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      // CORS 설정
+      img.crossOrigin = 'anonymous'
       
-      console.log(`Image downloaded successfully as ${filename}`)
+      img.onload = () => {
+        canvas.width = img.width
+        canvas.height = img.height
+        
+        // 배경을 흰색으로 설정 (PNG는 투명 배경 유지)
+        if (format === 'jpg' || format === 'jpeg') {
+          ctx.fillStyle = '#FFFFFF'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+        }
+        
+        ctx.drawImage(img, 0, 0)
+        
+        // 다운로드 링크 생성
+        canvas.toBlob((blob) => {
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          a.download = `ai-generated-image-${timestamp}.${format}`
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          URL.revokeObjectURL(url)
+          console.log('Image downloaded successfully')
+        }, `image/${format}`, 0.9)
+      }
+      
+      img.onerror = () => {
+        console.error('Failed to load image for direct download')
+        alert('다운로드에 실패했습니다. 이미지 URL에 직접 접근할 수 없습니다.')
+      }
+      
+      img.src = imageUrl
     } catch (error) {
       console.error('Download failed:', error)
-      
-      // 서버 다운로드가 실패하면 직접 다운로드 시도 (CORS 우회)
-      try {
-        console.log('Attempting direct download...')
-        
-        // Canvas를 사용하여 이미지 변환
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-        const img = new Image()
-        
-        // CORS 설정
-        img.crossOrigin = 'anonymous'
-        
-        img.onload = () => {
-          canvas.width = img.width
-          canvas.height = img.height
-          
-          // 배경을 흰색으로 설정 (PNG는 투명 배경 유지)
-          if (format === 'jpg' || format === 'jpeg') {
-            ctx.fillStyle = '#FFFFFF'
-            ctx.fillRect(0, 0, canvas.width, canvas.height)
-          }
-          
-          ctx.drawImage(img, 0, 0)
-          
-          // 다운로드 링크 생성
-          canvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `ai-generated-image-${Date.now()}.${format}`
-            document.body.appendChild(a)
-            a.click()
-            document.body.removeChild(a)
-            URL.revokeObjectURL(url)
-          }, `image/${format}`, 0.9)
-        }
-        
-        img.onerror = () => {
-          console.error('Failed to load image for direct download')
-          alert('다운로드에 실패했습니다. 이미지 URL에 직접 접근할 수 없습니다.')
-        }
-        
-        img.src = imageUrl
-      } catch (directError) {
-        console.error('Direct download also failed:', directError)
-        alert('다운로드에 실패했습니다. 잠시 후 다시 시도해주세요.')
-      }
+      alert('다운로드에 실패했습니다. 잠시 후 다시 시도해주세요.')
     }
   }
 
-  // AI 생성 함수 (실제 API 호출)
-  const generateWithAI = async (prompt) => {
-    if (!prompt.trim()) return
+  // AI 생성 함수 (실제 API 호출) - 리팩토링된 버전
+  const generateWithAI = async (prompt, addUserMessage = true) => {
+    if (!prompt.trim() && uploadedImages.length === 0) return
+    
+    // ✅ 이중 실행 가드 + runId 통일
+    if (isGenerating || window.__genInFlight) {
+      console.warn('Generation already in progress')
+      return
+    }
+    window.__genInFlight = true
     
     setIsGenerating(true)
     
-    // 로딩 메시지 추가
-    const loadingMessage = {
-      id: Date.now() + 1,
-      type: 'assistant',
-      message: "Generating your components...",
-      timestamp: new Date().toLocaleTimeString(),
-      date: new Date(),
-      isLoading: true
+    // Firebase Storage 업로드 변수들을 함수 시작 부분에서 선언
+    let storageImageUrl = null;
+    let storagePath = null;
+    let imageMetadata = null;
+    let uploadStatus = 'pending';
+    
+    // 사용자 메시지를 먼저 채팅 히스토리에 추가 (중복 방지)
+    let userMessage = null;
+    let loadingMessage = null;
+    
+    if (addUserMessage) {
+      userMessage = {
+        id: Date.now(),
+        type: 'user',
+        message: prompt,
+        timestamp: new Date().toLocaleTimeString(),
+        date: new Date()
+      }
+      
+      // 로딩 메시지 추가
+      loadingMessage = {
+        id: Date.now() + 1,
+        type: 'assistant',
+        message: "Generating your components...",
+        timestamp: new Date().toLocaleTimeString(),
+        date: new Date(),
+        isLoading: true
+      }
+      
+      // 사용자 메시지와 로딩 메시지를 동시에 추가
+      setChatHistory(prev => [...prev, userMessage, loadingMessage])
+      
+      // localStorage에 즉시 저장 (사용자 메시지 포함)
+      saveChatToStorage([...chatHistory, userMessage, loadingMessage])
+    } else {
+      // 사용자 메시지가 이미 추가된 경우 로딩 메시지만 추가
+      loadingMessage = {
+        id: Date.now() + 1,
+        type: 'assistant',
+        message: "Generating your components...",
+        timestamp: new Date().toLocaleTimeString(),
+        date: new Date(),
+        isLoading: true
+      }
+      
+      setChatHistory(prev => [...prev, loadingMessage])
+      saveChatToStorage([...chatHistory, loadingMessage])
     }
     
-    setChatHistory(prev => [...prev, loadingMessage])
+    // ✅ 생성 ID를 한 번만 만들고 모든 곳에 재사용
+    const runId = `gen_${Date.now()}_${Math.random().toString(36).slice(2,9)}`
+    const generationId = runId // storage 경로/Firestore meta/이미지 카드 id 모두 동일값으로
+    
+    // Firestore에 생성 시작 상태 저장 (즉시)
+    let firestoreDocId = null
+    if (currentUser) {
+      try {
+        const initialGenerationData = {
+          prompt: prompt,
+          options: {
+            type: selectedOptions.type || 'Icon',
+            style: selectedOptions.style || 'Flat',
+            size: selectedOptions.size || '1024',
+            extras: selectedOptions.extras || []
+          },
+          status: 'generating', // 상태를 generating으로 설정
+          chatHistory: [
+            ...chatHistory.filter(msg => !msg.isLoading),
+            ...(userMessage ? [userMessage] : []),
+            loadingMessage
+          ],
+          createdAt: new Date(),
+          metadata: {
+            projectName: 'iconic',
+            generationId: generationId,
+            storageInfo: {
+              uploaded: false,
+              storagePath: null,
+              originalUrl: null,
+              uploadStatus: 'pending'
+            }
+          }
+        }
+        
+        firestoreDocId = await saveGenerationHistory(currentUser.uid, initialGenerationData, 'iconic')
+        console.log('✅ Generation started and saved to Firestore with ID:', firestoreDocId)
+        
+        // ✅ 방금 만든 문서로 채팅 컨텍스트 전환
+        setCurrentGenerationDocId(firestoreDocId)
+        setCurrentChatId(firestoreDocId)                     // 채팅방 id를 문서 id로 통일
+        setChatHistory(initialGenerationData.chatHistory)    // 로딩 말풍선 있는 히스토리로 교체
+        localStorage.setItem('currentGenerationDocId', firestoreDocId)
+        setTimeout(() => {                                   // 사이드바 선택 고정
+          if (window.setSelectedGenerationId) window.setSelectedGenerationId(firestoreDocId)
+        }, 0)
+        
+        // 사이드바 새로고침 (생성 시작 상태 반영)
+        if (onRefreshSidebar) {
+          onRefreshSidebar()
+        }
+      } catch (error) {
+        console.error('Failed to save initial generation state:', error)
+      }
+    }
     
     try {
-      // 백엔드 형식에 맞게 데이터 변환
+      // 첨부된 이미지가 있으면 먼저 업로드
+      let referenceImageUrls = []
+      if (uploadedImages.length > 0) {
+        console.log('Processing uploaded images for AI generation...')
+        try {
+          // 이미지 파일들을 base64로 변환하여 전송
+          for (const image of uploadedImages) {
+            const base64 = await fileToBase64(image.file)
+            referenceImageUrls.push({
+              name: image.name,
+              data: base64,
+              type: image.file.type
+            })
+          }
+          console.log('Converted images to base64:', referenceImageUrls.length)
+        } catch (error) {
+          console.error('Failed to process uploaded images:', error)
+        }
+      }
+      
+      // 후속질문인지 확인 (이미 생성된 이미지가 있는 경우)
+      const isModification = generatedImages.length > 0 && currentChatId
+      
+      if (isModification) {
+        console.log('Follow-up question detected - AI will iterate on existing image')
+      }
+      
+      // isModification을 전역 변수로 설정하여 함수 내 다른 부분에서 접근 가능하도록 함
+      window.currentIsModification = isModification
+      
+      // 백엔드 형식에 맞게 데이터 변환 (기존 API 형식 유지)
       const request = {
         type: selectedOptions.type || 'Icon', // 기본값: Icon
         style: selectedOptions.style ? selectedOptions.style.replace(/\s+/g, '') : 'Flat', // 공백 제거, 기본값: Flat
-        size: selectedOptions.size ? selectedOptions.size.replace('px', '') : '1024', // px 제거, 기본값: 1024 (DALL-E 3 최적)
+        size: selectedOptions.size ? selectedOptions.size.replace('px', '') : '1024', // px 제거, 기본값: 1024 (GPT-Image-1 최적)
         extras: selectedOptions.extras || [],
-        description: prompt
+        description: prompt, // 원본 프롬프트 그대로 사용
+        referenceImages: referenceImageUrls // 첨부된 이미지 추가
       }
       
-      console.log('Sending request:', request) // 디버깅용
+      console.log('Sending request (compatible with existing API):', request) // 디버깅용
+      console.log('isModification flag:', isModification) // 디버깅용
       
       const result = await generateAsset(request)
       console.log('Generation successful:', result)
@@ -429,41 +743,77 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
       
       setGenerationResult(result)
       
-      // 생성된 이미지를 히스토리에 추가
-      if (result.asset.dalleImage) {
-        console.log('DALL-E image found:', result.asset.dalleImage)
-        addGeneratedImage({
-          imageUrl: result.asset.dalleImage,
-          prompt: prompt,
-          options: selectedOptions,
-          timestamp: new Date()
+      // ✅ "이미지 먼저 보여주고" 저장은 뒤에서
+      // ❶ 결과 획득
+      if (!result || !result.asset) throw new Error('Invalid response')
+      
+      // ❷ 미리보기용 URL 결정(우선순위: base64 > storageUrl > 외부URL)
+      const generatedUrl = result.asset.png || result.asset.storageImageUrl || result.asset.dalleImage
+      
+      if (generatedUrl) {
+        console.log('Generated image found:', generatedUrl)
+        
+        // ✅ 완료 알림 메시지(이벤트) – 한 세션/한 이미지당 하나
+        const completionMsg = {
+          id: `evt_${generationId}`,               // 고정 ID로 중복 방지
+          type: 'assistant',
+          subtype: 'image_generated',              // ← 이게 로드/복원 키
+          message: '🖼️ Image generated',
+          timestamp: new Date().toLocaleTimeString(),
+          date: new Date(),
+          isLoading: false
+        }
+        // 채팅에 삽입(중복 제거)
+        setChatHistory(prev => {
+          const next = [
+            ...prev.filter(m => m.id !== completionMsg.id), 
+            completionMsg
+          ]
+          saveChatToStorage(next)
+          return next
         })
+        
+        // ❸ UI 먼저 업데이트 (카드 1개만, id는 runId로 고정)
+        setGeneratedImages(prev => {
+          const next = prev.filter(i => i.id !== runId)
+          return [...next, {
+            id: runId,
+            imageUrl: generatedUrl,
+            prompt,
+            options: selectedOptions,
+            timestamp: new Date(),
+            dalleImage: result.asset.dalleImage || '',
+            storageImageUrl: result.asset.storageImageUrl || '' // 일단 빈 값일 수 있음
+          }]
+        })
+        
+        // ❹ 스피너는 여기서 끄기 → 사용자는 즉시 미리보기 확인
+        setIsGenerating(false)
       } else {
-        console.log('No DALL-E image in response')
+        console.log('No generated image in response')
+        setIsGenerating(false)
       }
       
-      // Firestore에 생성 이력 저장
-      if (currentUser && result.asset.dalleImage) {
-                  try {
-            console.log('Starting Firebase Storage upload process...')
+      // ✅ Storage 업로드 후 같은 카드(runId) 를 업데이트
+      if (currentUser && generatedUrl) {
+        console.log('Current user:', currentUser.uid)
+        console.log('Generated URL:', generatedUrl)
+        
+        try {
+          console.log('Starting Firebase Storage upload process...')
+          
+          let storageImageUrl = ''
+          let storagePath = null
+          let uploadStatus = 'pending'
+          
+          // base64/URL 무엇이든 uploadImageToStorage가 처리
+          try {
+            console.log('Starting Firebase Storage upload for:', generatedUrl)
             
-            // DALL-E 이미지를 Firebase Storage에 저장 (개선된 버전)
-            let storageImageUrl = null
-            let storagePath = null
-            let imageMetadata = null
-            let uploadStatus = 'pending'
-            
-            try {
-              console.log('Starting Firebase Storage upload for:', result.asset.dalleImage)
-            
-            // 프로젝트명과 고유한 생성 ID 생성
             const projectName = 'iconic'
-            const generationId = `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-            
-
             
             const uploadResult = await uploadImageToStorage(
-              result.asset.dalleImage, 
+              generatedUrl, 
               currentUser.uid, 
               generationId,
               projectName
@@ -471,106 +821,140 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
             
             storageImageUrl = uploadResult.downloadURL
             storagePath = uploadResult.storagePath
-            imageMetadata = uploadResult.metadata
             uploadStatus = 'success'
             
-                          console.log('Image uploaded to Firebase Storage successfully!')
-              console.log('Storage Path:', storagePath)
-              console.log('Download URL:', storageImageUrl)
+            console.log('Image uploaded to Firebase Storage successfully!')
+            console.log('Storage Path:', storagePath)
+            console.log('Download URL:', storageImageUrl)
             
-
+          } catch (uploadError) {
+            console.error('Failed to upload image to storage:', uploadError)
+            console.log('Using generated URL as fallback')
+            uploadStatus = 'failed'
             
-                      } catch (uploadError) {
-              console.error('Failed to upload image to storage:', uploadError)
-              console.log('Using DALL-E original URL as fallback')
-              uploadStatus = 'failed'
-            
-            // 업로드 실패 시 DALL-E 원본 URL 사용
-            storageImageUrl = result.asset.dalleImage
+            // 업로드 실패 시 원본 URL 사용
+            storageImageUrl = generatedUrl
             storagePath = null
-            imageMetadata = null
-            
-
           }
           
-          // 완전한 채팅 히스토리 구성 (사용자 프롬프트 + AI 응답 포함)
-          const completeChatHistory = [
-            ...chatHistory.filter(msg => !msg.isLoading), // 로딩 메시지 제거
-            {
-              id: Date.now() + 1,
-              type: 'user',
-              message: prompt,
-              timestamp: new Date().toLocaleTimeString(),
-              date: new Date()
-            },
-            {
-              id: Date.now() + 2,
-              type: 'assistant',
-              message: `Generation completed! Image for "${prompt}" has been created. Check the result in the right panel.`,
-              timestamp: new Date().toLocaleTimeString(),
-              date: new Date()
-            }
-          ]
+          // UI 이미지 카드도 같은 runId로 업데이트(두 장 방지)
+          setGeneratedImages(prev =>
+            prev.map(img => img.id === runId ? { ...img, storageImageUrl, imageUrl: storageImageUrl } : img)
+          )
+          // URL 없는 카드 제거 (No Image 방지)
+          setGeneratedImages(prev => prev.filter(img => !!img.imageUrl))
           
-          const generationData = {
-            prompt: prompt,
-            options: {
-              type: selectedOptions.type,
-              style: selectedOptions.style,
-              size: selectedOptions.size,
-              extras: selectedOptions.extras
-            },
-            result: {
-              ...result,
+          // ✅ Firestore 업데이트 시 절대 base64 저장 금지
+          if (firestoreDocId) {
+            const safeResult = {
+              status: 'completed',
+              generationId: generationId,               // ← 결과 객체에도 고유 ID 복제
               asset: {
-                ...result.asset,
-                storageImageUrl: storageImageUrl, // Storage URL
-                storagePath: storagePath, // Storage 경로
-                dalleImage: result.asset.dalleImage // 원본 DALL-E 이미지 URL
+                // base64/dataURL은 버린다
+                svg: '',
+                png: '',          // ❌ 저장하지 않음
+                jpeg: '',
+                storageImageUrl,  // ✅ 최종 표준
+                sourceUrl: (result.asset?.dalleImage && !isDataUrl(result.asset.dalleImage))
+                            ? safeShort(result.asset.dalleImage, 2000)
+                            : ''
+              },
+              code: {
+                svg: safeShort(result.code?.svg || '', 200_000),
+                react: safeShort(result.code?.react || '', 200_000),
+                html: safeShort(result.code?.html || '', 200_000),
+                dataUrl: ''       // ❌ 저장하지 않음
+              },
+              meta: {
+                type: String(result.meta?.type || selectedOptions.type || ''),
+                style: String(result.meta?.style || selectedOptions.style || ''),
+                size: String(result.meta?.size || selectedOptions.size || ''),
+                extras: Array.isArray(result.meta?.extras) ? result.meta.extras.map(String) : [],
+                checksum: safeShort(String(result.meta?.checksum || ''), 128),
+                description: safeShort(String(result.meta?.description || prompt || ''), 2000)
+              },
+              message: safeShort(String(result.message || ''), 2000)
+            }
+            
+            // ✅ 현재 최신 히스토리 스냅샷에서 로딩 제거 + 이미지생성 이벤트 유지
+            const base = Array.isArray(chatHistoryRef.current) ? chatHistoryRef.current : []
+            const withoutLoaders = base.filter(m => !m.isLoading)
+            const ensuredEvent = (() => {
+              const hasEvent = withoutLoaders.some(m => m.subtype === 'image_generated')
+              if (hasEvent) return withoutLoaders
+              return [
+                ...withoutLoaders,
+                { id: `evt_${generationId}`, type: 'assistant', subtype: 'image_generated',
+                  message: '🖼️ Image generated', timestamp: new Date().toLocaleTimeString(),
+                  date: new Date(), isLoading: false }
+              ]
+            })()
+            const updatedHistoryForFs = normalizeChatForFirestore(ensuredEvent)
+
+            const updateData = {
+              status: 'completed',
+              result: safeResult,
+              chatHistory: updatedHistoryForFs,   // ✅ 추가: Firestore에도 기록
+              updatedAt: new Date(),
+              metadata: {
+                projectName: 'iconic',
+                generationId,
+                storageInfo: {
+                  uploaded: !!storageImageUrl,
+                  storagePath,
+                  originalUrl: isDataUrl(generatedUrl) ? '' : safeShort(generatedUrl, 2000),
+                  uploadStatus
+                }
               }
-            },
-            chatHistory: completeChatHistory,
-            createdAt: new Date(),
-            // 추가 메타데이터
-            metadata: {
-              projectName: 'iconic',
-              generationId: `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-              storageInfo: {
-                uploaded: !!storageImageUrl,
-                storagePath: storagePath,
-                originalUrl: result.asset.dalleImage,
-                uploadStatus: uploadStatus
+            }
+            
+            try {
+              const { updateGeneration } = await import('../utils/firestore')
+              await updateGeneration(firestoreDocId, updateData)
+              console.log('✅ Generation completed and updated in Firestore')
+              
+              // 사이드바 새로고침 (완료 상태 반영)
+              if (onRefreshSidebar) {
+                onRefreshSidebar()
               }
+            } catch (e) {
+              console.warn('Full update failed, retrying with minimal payload', e)
+              // 최소 안전 페이로드로 재시도(거의 실패하지 않음)
+              const minimal = {
+                status: 'completed',
+                result: {
+                  status: 'completed',
+                  generationId: generationId, // ✅ 최소 페이로드에도 generationId 포함
+                  asset: { storageImageUrl },
+                  code: {},
+                  meta: { size: String(selectedOptions.size || '1024') },
+                  message: ''
+                },
+                chatHistory: updatedHistoryForFs, // ✅ 최소 페이로드에도 chatHistory 포함
+                updatedAt: new Date()
+              }
+              const { updateGeneration } = await import('../utils/firestore')
+              await updateGeneration(firestoreDocId, minimal)
             }
           }
           
-          const generationId = await saveGenerationHistory(currentUser.uid, generationData, 'iconic')
-          console.log('Generation history saved to Firestore with ID:', generationId)
-          
-          // 사이드바 새로고침
-          if (onRefreshSidebar) {
-            onRefreshSidebar()
-          }
         } catch (error) {
-          console.error('Failed to save generation history:', error)
+          console.error('Failed to process generation completion:', error)
+          console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          })
         }
-                } else {
-            console.log('No DALL-E image found in result or user not logged in')
-          }
+      } else {
+        console.log('No current user found, skipping Firestore update')
+      }
       
-      // 로딩 메시지 제거하고 생성 완료 메시지 추가 (기존 히스토리 유지)
+      // ✅ 로딩만 제거(이벤트는 유지)
       setChatHistory(prev => {
-        const filteredHistory = prev.filter(msg => !msg.isLoading)
-        const updatedHistory = [...filteredHistory, {
-          id: Date.now() + 2,
-          type: 'assistant',
-          message: `Generation completed! Image for "${prompt}" has been created. Check the result in the right panel.`,
-          timestamp: new Date().toLocaleTimeString(),
-          date: new Date()
-        }]
-        // localStorage에 저장
-        saveChatToStorage(updatedHistory)
-        return updatedHistory
+        const filtered = prev.filter(msg => !msg.isLoading)
+        saveChatToStorage(filtered)
+        return filtered
       })
       
     } catch (error) {
@@ -594,48 +978,37 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
         return updatedHistory
       })
       
-      // 에러가 발생했을 때도 Firestore에 저장 (실패 이력 보존)
-      if (currentUser) {
+      // 에러가 발생했을 때 Firestore 상태 업데이트 (실패 상태)
+      if (currentUser && firestoreDocId) {
         try {
-          const errorGenerationData = {
-            prompt: prompt,
-            options: {
-              type: selectedOptions.type,
-              style: selectedOptions.style,
-              size: selectedOptions.size,
-              extras: selectedOptions.extras
-            },
+          const errorUpdateData = {
+            status: 'failed',
+            error: error.message || 'Unknown error',
             result: {
-              error: error.message || 'Unknown error',
-              status: 'failed'
+              status: 'failed',
+              asset: {},
+              code: {},
+              meta: {},
+              message: error.message || 'Unknown error'
             },
-            chatHistory: [
-              ...chatHistory.filter(msg => !msg.isLoading),
-              {
-                id: Date.now() + 1,
-                type: 'user',
-                message: prompt,
-                timestamp: new Date().toLocaleTimeString(),
-                date: new Date()
-              },
-              errorMessage
-            ],
-            createdAt: new Date()
+            updatedAt: new Date()
           }
           
-          await saveGenerationHistory(currentUser.uid, errorGenerationData)
-          console.log('Error generation history saved to Firestore')
+          const { updateGeneration } = await import('../utils/firestore')
+          await updateGeneration(firestoreDocId, errorUpdateData)
+          console.log('✅ Generation error state updated in Firestore')
           
           // 사이드바 새로고침
           if (onRefreshSidebar) {
             onRefreshSidebar()
           }
         } catch (saveError) {
-          console.error('Failed to save error generation history:', saveError)
+          console.error('Failed to update error state in Firestore:', saveError)
         }
       }
     } finally {
-      setIsGenerating(false)
+      setIsGenerating(false) // 이미 중간에 껐지만 안전차원
+      window.__genInFlight = false
     }
   }
 
@@ -672,47 +1045,67 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     document.body.style.userSelect = ''
   }
 
-  // 컴포넌트 마운트 시 임시 저장된 채팅 이력 읽기
-  useEffect(() => {
-    try {
-      const tempData = localStorage.getItem('tempChatHistory')
-      if (tempData) {
-        const { history, prompt: promptText, generationResult } = JSON.parse(tempData)
-        if (history && Array.isArray(history)) {
-          setChatHistory(history)
-          // 프롬프트는 입력창에 표시하지 않음 (이미 채팅 히스토리에 포함됨)
-          // if (promptText) {
-          //   setPrompt(promptText)
-          // }
-          if (generationResult) {
-            setGenerationResult(generationResult)
+      // 컴포넌트 마운트 시 임시 저장된 채팅 이력 읽기
+    useEffect(() => {
+      // ✅ Session → Creation 핸드오프: 선택해야 할 generationId가 있다면 사이드바에 전달
+      const pendingId = localStorage.getItem('openGenerationId')
+      if (pendingId) {
+        setCurrentGenerationDocId(pendingId)
+        setCurrentChatId(pendingId)
+        // 사이드바가 아직 mount 안 됐을 수 있으니 잠깐 재시도
+        const trySelect = () => {
+          if (window.setSelectedGenerationId) {
+            window.setSelectedGenerationId(pendingId)
+            clearInterval(t)
           }
         }
-        // 사용 후 삭제
-        localStorage.removeItem('tempChatHistory')
-      } else {
-        // 임시 데이터가 없으면 저장된 채팅 이력 복원
+        const t = setInterval(trySelect, 50)
+        // 3초 내에 준비되면 선택됨(준비되자마자 종료)
+        setTimeout(() => clearInterval(t), 3000)
+        localStorage.removeItem('openGenerationId')
+      }
+      
+      try {
+        const tempData = localStorage.getItem('tempChatHistory')
+        if (tempData) {
+          const { history, prompt: promptText, generationResult } = JSON.parse(tempData)
+          if (history && Array.isArray(history)) {
+            setChatHistory(history)
+            // 프롬프트는 입력창에 표시하지 않음 (이미 채팅 히스토리에 포함됨)
+            // if (promptText) {
+            //   setPrompt(promptText)
+            // }
+            if (generationResult) {
+              setGenerationResult(generationResult)
+            }
+          }
+          // 사용 후 삭제
+          localStorage.removeItem('tempChatHistory')
+        } else {
+          // 임시 데이터가 없으면 저장된 채팅 이력 복원
+          restoreChatHistory()
+        }
+      } catch (error) {
+        console.error('Failed to load temp chat history:', error)
+        // 에러 발생 시 저장된 채팅 이력 복원
         restoreChatHistory()
       }
-    } catch (error) {
-      console.error('Failed to load temp chat history:', error)
-      // 에러 발생 시 저장된 채팅 이력 복원
-      restoreChatHistory()
-    }
-    
-    // 생성된 이미지들도 로드
-    loadGeneratedImages()
-    
-    // window 객체에 함수 등록 (사이드바에서 호출 가능하도록)
-    window.handleNewChat = handleNewChat
-    window.loadChatHistoryFromSidebar = loadChatHistory
-    
-    // 컴포넌트 언마운트 시 정리
-    return () => {
-      delete window.handleNewChat
-      delete window.loadChatHistoryFromSidebar
-    }
-  }, [])
+      
+      // 생성된 이미지들은 더 이상 자동으로 로드하지 않음 (디폴트 상태에서는 불필요)
+      
+      // window 객체에 함수 등록 (사이드바에서 호출 가능하도록)
+      window.handleNewChat = handleNewChat
+      window.loadChatHistoryFromSidebar = loadChatHistory
+      
+      // 컴포넌트 언마운트 시 정리
+      return () => {
+        delete window.handleNewChat
+        delete window.loadChatHistoryFromSidebar
+      }
+    }, [])
+
+  // ✅ chatHistory가 변경될 때마다 ref 동기화
+  useEffect(() => { chatHistoryRef.current = chatHistory }, [chatHistory])
 
   // 다운로드 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -954,23 +1347,62 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     e.preventDefault()
     if (!prompt.trim() && uploadedImages.length === 0) return
 
-    // 사용자 메시지 추가
+    // 사용자 메시지 추가 (이미지가 첨부된 경우 이미지 정보도 포함)
+    let messageText = prompt
+    if (uploadedImages.length > 0) {
+      messageText += `\n\n[${uploadedImages.length} reference image(s) attached]`
+    }
+    
     const userMessage = {
       id: Date.now(),
       type: 'user',
-      message: prompt,
+      message: messageText,
       timestamp: new Date().toLocaleTimeString(),
       date: new Date()
     }
-    const newHistory = [...chatHistory, userMessage]
-    setChatHistory(newHistory)
-    saveChatToStorage(newHistory)
+    
+    // 후속질문인지 확인 (이미 생성된 이미지가 있는 경우)
+    const isFollowUpQuestion = generatedImages.length > 0 && currentChatId
+    
+    console.log('Follow-up question check:', {
+      generatedImagesLength: generatedImages.length,
+      currentChatId: currentChatId,
+      isFollowUpQuestion: isFollowUpQuestion
+    })
+    
+    if (isFollowUpQuestion) {
+      console.log('Follow-up question detected, adding to existing chat')
+      // 기존 채팅방에 메시지 추가
+      const newHistory = [...chatHistory, userMessage]
+      setChatHistory(newHistory)
+      saveChatToStorage(newHistory)
+    } else {
+      console.log('New chat question, starting fresh conversation')
+      // 새 채팅 시작
+      const newHistory = [userMessage]
+      setChatHistory(newHistory)
+      saveChatToStorage(newHistory)
+    }
 
-    // 실제 AI 생성 함수 호출
-    generateWithAI(prompt)
+    // 실제 AI 생성 함수 호출 (사용자 메시지는 이미 추가됨)
+    generateWithAI(prompt, false) // false는 사용자 메시지 중복 추가 방지
 
     setPrompt('')
     setUploadedImages([])
+  }
+
+  // 파일을 base64로 변환하는 함수
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => {
+        // data:image/jpeg;base64, 부분을 제거하고 base64만 추출
+        const base64 = reader.result.split(',')[1]
+        resolve(base64)
+      }
+      reader.onerror = error => reject(error)
+    })
   }
 
   // 파일 업로드 처리
@@ -992,7 +1424,8 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
     setUploadedImages(prev => {
       const imageToRemove = prev.find(img => img.id === imageId)
       if (imageToRemove) {
-        URL.revokeObjectURL(imageToRemove.url)
+        // File 객체는 자동으로 정리되므로 URL.revokeObjectURL은 필요 없음
+        console.log('Removed image:', imageToRemove.name)
       }
       return prev.filter(img => img.id !== imageId)
     })
@@ -1069,7 +1502,36 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
           </div>
 
           {/* Uploaded Images Display - 채팅창 위쪽에 표시 */}
-
+          {uploadedImages.length > 0 && (
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-slate-700">Reference Images</h4>
+                <button
+                  onClick={() => setUploadedImages([])}
+                  className="text-xs text-slate-500 hover:text-slate-700"
+                >
+                  Clear all
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {uploadedImages.map((image) => (
+                  <div key={image.id} className="relative group">
+                    <img
+                      src={URL.createObjectURL(image.file)}
+                      alt={image.name}
+                      className="w-16 h-16 object-cover rounded-lg border border-slate-200"
+                    />
+                    <button
+                      onClick={() => removeImage(image.id)}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-slate-800 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-700"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Template Selection Panel */}
           <div className="mb-4 flex-shrink-0">
@@ -1354,86 +1816,27 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
                       <p className="text-sm">Please wait while AI creates your masterpiece</p>
                     </div>
                   </div>
-                ) : generationResult ? (
-                  <div className="h-full flex flex-col">
-                    <div className="mb-4 flex items-center justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-800 mb-2">Generated Image</h3>
-                        <p className="text-sm text-slate-600">"{generationResult.meta.description}"</p>
-                        <p className="text-xs text-slate-500 mt-1">
-                          {generationResult.meta.type} • {generationResult.meta.style} • {generationResult.meta.size}px
-                        </p>
-                      </div>
-                      <div className="flex justify-center">
-                        <div className="relative download-dropdown">
-                          <button
-                            onClick={() => setShowDownloadDropdown(!showDownloadDropdown)}
-                            className="p-3 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-lg hover:shadow-xl"
-                            title="Download Image"
-                          >
-                            <Download className="w-5 h-5" />
-                          </button>
-                          
-                          {/* 다운로드 드롭다운 메뉴 */}
-                          {showDownloadDropdown && (
-                            <div className="absolute top-full left-0 mt-2 bg-white border border-slate-200 rounded-lg shadow-lg z-50 min-w-32">
-                              <div className="py-1">
-                                <button
-                                  onClick={() => {
-                                    downloadDalleImage(generationResult.asset.storageImageUrl || generationResult.asset.dalleImage, 'png')
-                                    setShowDownloadDropdown(false)
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center space-x-2"
-                                >
-                                  <span>PNG</span>
-                                  <span className="text-xs text-slate-500">(Original)</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    downloadDalleImage(generationResult.asset.storageImageUrl || generationResult.asset.dalleImage, 'jpg')
-                                    setShowDownloadDropdown(false)
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center space-x-2"
-                                >
-                                  <span>JPG</span>
-                                  <span className="text-xs text-slate-500">(Compressed)</span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    downloadDalleImage(generationResult.asset.storageImageUrl || generationResult.asset.dalleImage, 'webp')
-                                    setShowDownloadDropdown(false)
-                                  }}
-                                  className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors flex items-center space-x-2"
-                                >
-                                  <span>WebP</span>
-                                  <span className="text-xs text-slate-500">(Modern)</span>
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex-1 flex flex-col bg-slate-50 rounded-lg overflow-hidden">
-                      {/* 현재 생성된 이미지 표시 */}
-                      {(generationResult.asset.storageImageUrl || generationResult.asset.dalleImage) && (
-                        <div className="flex justify-center pt-6 pb-4">
-                          <img 
-                            src={generationResult.asset.storageImageUrl || generationResult.asset.dalleImage}
-                            alt="AI Generated Image"
-                            className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
-                          />
-                        </div>
-                      )}
-                      
-
-                    </div>
-                  </div>
                 ) : (
-                  <div className="h-full flex items-center justify-center">
-                    <div className="text-center text-slate-500">
-                      <p className="text-lg mb-2">AI-generated images and videos will appear here</p>
-                      <p className="text-sm">Request in chat to see your results</p>
+                  <div className="h-full flex flex-col">
+                    {/* Header */}
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-2">Generated Images</h3>
+                      <p className="text-sm text-slate-600">All your AI-generated images in one place</p>
+                    </div>
+                    
+                    {/* Image Card Stack */}
+                    <div className="flex-1 overflow-y-auto">
+                      <ImageCardStack
+                        generatedImages={generatedImages}
+                        onImageClick={(image) => {
+                          // 이미지 클릭 시 처리 (필요시 추가 로직)
+                          console.log('Image clicked:', image);
+                        }}
+                        onRegenerate={(image) => {
+                          // 이미지 재생성 처리
+                          handleRegenerateFromImage(image);
+                        }}
+                      />
                     </div>
                   </div>
                 )}

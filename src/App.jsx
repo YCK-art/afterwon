@@ -51,6 +51,8 @@ function App() {
       generationResult 
     }))
   }
+
+
   
   // CreationSidebar 새로고침 함수
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)

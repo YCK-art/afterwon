@@ -1,193 +1,186 @@
-# Firebase Storage 연동 가이드
+# Firebase Storage CORS 설정 가이드
 
-## 개요
-이 프로젝트는 Firebase Storage를 사용하여 AI로 생성된 이미지들을 안전하게 저장하고 관리합니다.
+## 🚨 ERR_HTTP2_COMPRESSION_ERROR 해결 방법
 
-## Firebase Storage 구조
+Firebase Storage에서 이미지를 직접 로드할 때 발생하는 `ERR_HTTP2_COMPRESSION_ERROR` 문제를 해결하는 방법입니다.
 
-### 폴더 경로
-```
-gs://afterwon-6d17f.firebasestorage.app/
-├── projects/
-│   └── iconic/
-│       └── users/
-│           └── {userId}/
-│               └── generations/
-│                   └── {generationId}/
-│                       └── image.jpg
-```
+## 🔥 Base64 이미지 업로드 실패 해결 (400 Bad Request)
 
-### 메타데이터
-각 이미지 파일에는 다음 메타데이터가 포함됩니다:
-- `userId`: 사용자 ID
-- `generationId`: 생성 ID
-- `projectName`: 프로젝트명 (iconic)
-- `uploadedAt`: 업로드 시간
-- `originalUrl`: 원본 DALL-E 이미지 URL
-- `retryCount`: 재시도 횟수
+### 문제 원인
+- **base64 데이터 처리**: GPT-Image-1의 base64 이미지 데이터가 너무 큼 (1.6MB+)
+- **Firebase Storage 규칙**: 파일 크기 제한 (기본 10MB)
+- **CORS 설정**: base64 업로드를 위한 적절한 헤더 부족
 
-## 주요 기능
+### 즉시 해결 방법
 
-### 1. 이미지 업로드
-```javascript
-import { uploadImageToStorage } from '../utils/storage'
-
-const uploadResult = await uploadImageToStorage(
-  imageUrl,        // DALL-E 이미지 URL
-  userId,          // 사용자 ID
-  generationId,    // 생성 ID
-  'iconic'         // 프로젝트명
-)
-
-// 결과
-{
-  downloadURL: 'https://...',
-  storagePath: 'projects/iconic/users/...',
-  metadata: { ... }
-}
+#### 1. Firebase Storage 규칙 업데이트
+```bash
+# Firebase Console에서 Storage > Rules 편집
+# 또는 firebase-storage-rules.rules 파일 사용
 ```
 
-### 2. 이미지 다운로드
-```javascript
-import { getImageFromStorage } from '../utils/storage'
+#### 2. CORS 설정 적용 (중요!)
+```bash
+# Firebase CLI 설치
+npm install -g firebase-tools
 
-const imageUrl = await getImageFromStorage(storagePath)
+# 로그인 및 프로젝트 선택
+firebase login
+firebase use your-project-id
+
+# CORS 설정 적용
+gsutil cors set firebase-storage-cors.json gs://your-bucket-name.appspot.com
+
+# 설정 확인
+gsutil cors get gs://your-bucket-name.appspot.com
 ```
 
-### 3. 사용자 이미지 목록
-```javascript
-import { getUserImages } from '../utils/storage'
+#### 3. 파일 크기 제한 확인
+- 현재 설정: 20MB
+- base64 이미지: 일반적으로 1-3MB
+- 충분한 여유 공간 확보
 
-const userImages = await getUserImages(userId, 'iconic')
+## 🔧 해결 방법 1: Firebase CLI를 통한 CORS 설정
+
+### 1. Firebase CLI 설치
+```bash
+npm install -g firebase-tools
 ```
 
-### 4. 이미지 삭제
-```javascript
-import { deleteImageFromStorage } from '../utils/storage'
-
-await deleteImageFromStorage(storagePath)
+### 2. Firebase 프로젝트 로그인
+```bash
+firebase login
 ```
 
-## 에러 처리 및 재시도
+### 3. CORS 설정 적용
+```bash
+# 프로젝트 선택
+firebase use your-project-id
 
-### 자동 재시도
-- 최대 3회 재시도
-- 2초 간격으로 재시도
-- 네트워크 오류, 권한 오류 등에 대응
+# CORS 설정 적용
+gsutil cors set firebase-storage-cors.json gs://your-bucket-name.appspot.com
+```
 
-### Fallback 처리
-- Firebase Storage 업로드 실패 시 DALL-E 원본 URL 사용
-- 사용자에게 명확한 상태 알림
+### 4. CORS 설정 확인
+```bash
+gsutil cors get gs://your-bucket-name.appspot.com
+```
 
-## 보안 규칙
+## 🔧 해결 방법 2: Google Cloud Console을 통한 설정
 
-Firebase Storage 보안 규칙을 다음과 같이 설정하세요:
+### 1. Google Cloud Console 접속
+- [Google Cloud Console](https://console.cloud.google.com/) 접속
+- 프로젝트 선택
 
+### 2. Cloud Storage > Browser로 이동
+- 왼쪽 메뉴에서 "Cloud Storage" > "Browser" 선택
+
+### 3. 버킷 선택
+- 해당 Firebase Storage 버킷 클릭
+
+### 4. CORS 설정
+- "Permissions" 탭 클릭
+- "CORS configuration" 섹션에서 편집
+- 다음 설정 추가:
+
+```json
+[
+  {
+    "origin": ["*"],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type",
+      "Access-Control-Allow-Origin",
+      "Access-Control-Allow-Methods",
+      "Access-Control-Allow-Headers",
+      "Cache-Control",
+      "Authorization"
+    ]
+  }
+]
+```
+
+## 🔧 해결 방법 3: 프록시 서버 사용 (권장)
+
+현재 구현된 프록시 서버를 사용하면 CORS 문제를 완전히 우회할 수 있습니다.
+
+### 프록시 엔드포인트
+```
+GET /api/proxy-storage?url=<firebase_storage_url>
+```
+
+### 자동 프록시 적용
+- CreationSidebar와 ImageCardStack에서 Firebase Storage URL이 자동으로 프록시를 통해 로드됨
+- 사용자가 별도 설정할 필요 없음
+
+## 📋 Firebase Storage 규칙 확인
+
+### 기본 규칙
 ```javascript
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // 프로젝트별 사용자 폴더 접근 제어
     match /projects/{projectName}/users/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // 공개 읽기 전용 폴더 (필요시)
-    match /public/{allPaths=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if request.resource.size < 10 * 1024 * 1024;
+      allow write: if request.resource.contentType.matches('image/.*');
     }
   }
 }
 ```
 
-## 사용법
+## 🧪 테스트 방법
 
-### 1. 테스트 모드
-CreationPage에서 "🧪 Test Mode" 버튼을 클릭하여 이미지 업로드를 테스트할 수 있습니다.
+### 1. CORS 설정 확인
+```bash
+# 브라우저 개발자 도구에서 Network 탭 확인
+# Firebase Storage URL 직접 접근 시 CORS 오류 확인
+```
 
-### 2. 이미지 생성
-AI 이미지 생성 후 자동으로 Firebase Storage에 업로드됩니다.
+### 2. 프록시 서버 테스트
+```bash
+# 프록시 엔드포인트 테스트
+curl "http://localhost:3001/api/proxy-storage?url=<firebase_storage_url>"
+```
 
-### 3. 사이드바에서 확인
-생성된 이미지들이 CreationSidebar에 썸네일로 표시됩니다.
+### 3. 이미지 로딩 테스트
+- 사이드바에서 생성된 이미지 썸네일 확인
+- 이미지 카드에서 이미지 표시 확인
+- 다운로드 기능 테스트
 
-## 문제 해결
+## 🚀 성능 최적화
 
-### 일반적인 문제들
+### 1. 캐싱 설정
+- 프록시 서버에서 1시간 캐시 설정
+- 브라우저 캐시 활용
 
-1. **권한 오류**
-   - Firebase 프로젝트 설정 확인
-   - Storage 보안 규칙 확인
-   - 사용자 인증 상태 확인
+### 2. 이미지 압축
+- Firebase Storage에서 이미지 자동 압축
+- 적절한 이미지 크기 설정
 
-2. **업로드 실패**
-   - 네트워크 연결 확인
-   - 이미지 URL 유효성 확인
-   - Storage 용량 확인
+### 3. CDN 활용
+- Firebase Hosting과 연동하여 CDN 활용
+- 전 세계 사용자를 위한 빠른 이미지 로딩
 
-3. **이미지 표시 안됨**
-   - Storage URL 유효성 확인
-   - CORS 설정 확인
-   - 이미지 파일 존재 여부 확인
+## 🔍 문제 해결 체크리스트
 
-### 디버깅
+- [ ] Firebase CLI 설치 및 로그인
+- [ ] CORS 설정 파일 생성 (`firebase-storage-cors.json`)
+- [ ] CORS 설정 적용 (`gsutil cors set`)
+- [ ] Firebase Storage 규칙 확인
+- [ ] 프록시 서버 실행 확인
+- [ ] 이미지 로딩 테스트
+- [ ] 다운로드 기능 테스트
 
-브라우저 콘솔에서 다음 로그를 확인하세요:
-- 🚀 업로드 시작
-- 📦 이미지 blob 정보
-- ✅ 업로드 성공
-- ❌ 업로드 실패
-- 🔄 재시도 정보
+## 📞 추가 지원
 
-## 성능 최적화
+문제가 지속되는 경우:
+1. Firebase Console에서 Storage > Rules 확인
+2. Google Cloud Console에서 CORS 설정 확인
+3. 프록시 서버 로그 확인
+4. 브라우저 개발자 도구에서 네트워크 오류 확인
 
-### 이미지 압축
-- JPEG 형식 사용
-- 적절한 해상도 설정
-- Progressive JPEG 고려
+---
 
-### 캐싱
-- Firebase Storage URL 캐싱
-- 브라우저 이미지 캐싱 활용
-
-### 배치 처리
-- 여러 이미지 동시 업로드
-- 업로드 큐 관리
-
-## 모니터링
-
-### Firebase Console
-- Storage 사용량 모니터링
-- 업로드/다운로드 통계
-- 에러 로그 확인
-
-### 사용자 통계
-- 프로젝트별 이미지 수
-- 사용자별 저장 용량
-- 인기 스타일/타입 분석
-
-## 향후 개선사항
-
-1. **이미지 최적화**
-   - WebP 형식 지원
-   - 자동 리사이징
-   - 썸네일 생성
-
-2. **고급 기능**
-   - 이미지 태깅
-   - 검색 기능
-   - 공유 기능
-
-3. **성능 개선**
-   - CDN 연동
-   - 지연 로딩
-   - 가상 스크롤
-
-## 지원
-
-문제가 발생하면 다음을 확인하세요:
-1. Firebase 프로젝트 설정
-2. 네트워크 연결 상태
-3. 브라우저 콘솔 에러
-4. Firebase Console 로그 
+**참고**: 프록시 서버를 사용하면 CORS 설정 없이도 이미지를 안전하게 로드할 수 있습니다. 

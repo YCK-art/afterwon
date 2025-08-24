@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { Plus, ChevronDown, Clock, Image as ImageIcon } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getUserGenerations } from '../utils/firestore'
+import { useNavigate } from 'react-router-dom'
 
 const SessionPage = () => {
   const { currentUser } = useAuth()
+  const navigate = useNavigate()
   const [sortBy, setSortBy] = useState('Date updated')
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false)
   const [sessions, setSessions] = useState([])
@@ -140,7 +142,15 @@ const SessionPage = () => {
           ) : sessions.length > 0 ? (
             // 실제 데이터 표시
             sessions.map((session) => (
-              <div key={session.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+              <div 
+                key={session.id} 
+                className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => {
+                  // Creation 페이지에서 이 값을 읽어 사이드바 선택
+                  localStorage.setItem('openGenerationId', session.id)
+                  navigate('/creation') // 라우트 경로는 앱에 맞게 조정
+                }}
+              >
                 {/* Thumbnail */}
                 <div className="h-48 bg-slate-50 border-b border-slate-200 flex items-center justify-center overflow-hidden relative">
                   {/* Background Image - 모든 카드에 동일한 배경 */}

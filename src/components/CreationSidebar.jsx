@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { 
+import {
   ChevronLeft,
-  ChevronRight,
   Grid3X3,
   FolderOpen,
   Globe,
@@ -9,21 +8,39 @@ import {
   Clock,
   PanelLeft,
   LogOut,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
-import { getUserGenerations } from '../utils/firestore'
 
-const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentPage, startNewChat, onLoadChatHistory, refreshTrigger }) => {
+// ✅ 실시간 구독으로 교체
+import { subscribeToGenerationUpdates } from '../utils/firestore'
+
+/**
+ * Props
+ * - projectName (선택): Firestore 필터에 사용, 기본 'iconic'
+ * - onOpenGeneration: (generationId: string) => void
+ *   → CreationPage가 이 콜백을 받아서 해당 generationId의 messages를 subscribeToMessages로 표시하도록 하세요.
+ *   (기존 window.loadChatHistoryFromSidebar 브릿지는 유지용으로 남겨둠)
+ */
+const CreationSidebar = ({
+  isCollapsed,
+  setIsCollapsed,
+  currentPage,
+  setCurrentPage,
+  startNewChat,
+  refreshTrigger,
+  projectName = 'iconic'
+}) => {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
   const [generations, setGenerations] = useState([])
-  const [loadingGenerations, setLoadingGenerations] = useState(false)
-  const [selectedGenerationId, setSelectedGenerationId] = useState(null) // 선택된 채팅 이력 ID
+  const [loadingGenerations, setLoadingGenerations] = useState(true)
+  const [selectedGenerationId, setSelectedGenerationId] = useState(null)
   const profileDropdownRef = useRef(null)
   const { currentUser } = useAuth()
-  
+
   // 프로필 드롭다운 밖 클릭 감지
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -31,48 +48,39 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
         setIsProfileDropdownOpen(false)
       }
     }
-
     document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [isProfileDropdownOpen])
 
-  // 사용자 이름의 이니셜 생성
   const getUserInitials = (displayName) => {
     if (!displayName) return 'U'
     return displayName
       .split(' ')
-      .map(name => name.charAt(0))
+      .map((name) => name.charAt(0))
       .join('')
       .toUpperCase()
       .slice(0, 2)
   }
 
-  // 랜덤 배경색 생성 (사용자 ID 기반으로 일관된 색상)
   const getRandomColor = (uid) => {
     if (!uid) return 'bg-slate-600'
-    
     const colors = [
       'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500',
       'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500',
       'bg-orange-500', 'bg-cyan-500', 'bg-emerald-500', 'bg-violet-500'
     ]
-    
-    // UID를 기반으로 일관된 색상 선택
     const hash = uid.split('').reduce((a, b) => {
       a = ((a << 5) - a) + b.charCodeAt(0)
       return a & a
     }, 0)
-    
     return colors[Math.abs(hash) % colors.length]
   }
 
-  const profileDropdownItems = [
-    { icon: Clock, label: 'Plans and Billing' },
-    { icon: Plus, label: 'Invite members' },
-    { icon: Globe, label: 'Upgrade your plan' },
-    { icon: ChevronLeft, label: 'Switch Workspace' }
+  const menuItems = [
+    { icon: Grid3X3, label: 'Go to Dashboard', page: 'home' },
+    { icon: FolderOpen, label: 'Open Assets', page: 'assets' },
+    { icon: Globe, label: 'Discover Workflows', page: 'workflows' },
+    { icon: Plus, label: 'New Chat', page: 'creation', action: 'newChat' }
   ]
 
   const handleLogout = async () => {
@@ -85,153 +93,107 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
     }
   }
 
-  const menuItems = [
-    { icon: Grid3X3, label: 'Go to Dashboard', page: 'home' },
-    { icon: FolderOpen, label: 'Open Assets', page: 'assets' },
-    { icon: Globe, label: 'Discover Workflows', page: 'workflows' },
-    { icon: Plus, label: 'New Chat', page: 'creation', action: 'newChat' }
-  ]
-
-  // 새 채팅 시작 시 기존 채팅을 보존
+  // New Chat → 선택 해제 + 상위 핸들러
   const handleNewChat = () => {
-    // 선택된 생성 이력 초기화
     setSelectedGenerationId(null)
-    
-    // window 객체를 통해 CreationPage의 handleNewChat 함수 호출
-    if (window.handleNewChat) {
-      window.handleNewChat()
-    } else if (startNewChat) {
-      startNewChat()
-    }
+    if (window.handleNewChat) window.handleNewChat()
+    else if (startNewChat) startNewChat()
   }
 
-  // Firestore에서 생성 이력 불러오기
-  const loadGenerations = async () => {
-    if (!currentUser) return
-    
-    setLoadingGenerations(true)
-    try {
-      const userGenerations = await getUserGenerations(currentUser.uid)
-      setGenerations(userGenerations)
-    } catch (error) {
-      console.error('Failed to load generations:', error)
-    } finally {
-      setLoadingGenerations(false)
-    }
-  }
-
-  // 생성 이력 클릭 시 채팅 이력 로드
-  const handleGenerationClick = (generation) => {
-    console.log('Generation clicked:', generation)
-    console.log('Generation chatHistory:', generation.chatHistory)
-    console.log('Generation prompt:', generation.prompt)
-    console.log('Generation result:', generation.result)
-    
-    // 선택된 생성 이력 ID 설정
-    setSelectedGenerationId(generation.id)
-    
-    // window 객체를 통해 CreationPage의 함수 직접 호출
-    if (window.loadChatHistoryFromSidebar) {
-      const chatHistory = generation.chatHistory || []
-      const prompt = generation.prompt || ''
-      const result = generation.result || null
-      
-      console.log('Calling loadChatHistoryFromSidebar with:', {
-        chatHistory: chatHistory,
-        prompt: prompt,
-        result: result
-      })
-      
-      window.loadChatHistoryFromSidebar(chatHistory, prompt, result)
-    } else {
-      console.log('loadChatHistoryFromSidebar is not available')
-    }
-  }
-
-  // 컴포넌트 마운트 시 및 refreshTrigger 변경 시 생성 이력 불러오기
+  // ✅ 실시간 구독: 생성 문서 변경을 즉시 반영
   useEffect(() => {
-    loadGenerations()
-    
-    // window 객체에 함수 등록 (CreationPage에서 호출 가능하도록)
-    window.setSelectedGenerationId = setSelectedGenerationId
-    
-    // 컴포넌트 언마운트 시 정리
-    return () => {
-      delete window.setSelectedGenerationId
-    }
-  }, [currentUser, refreshTrigger])
+    if (!currentUser) return
+    setLoadingGenerations(true)
 
-  // 생성 이력을 날짜별로 그룹핑
-  const groupGenerationsByDate = (generations) => {
-    if (!generations || generations.length === 0) return []
-    
+    const unsub = subscribeToGenerationUpdates(
+      currentUser.uid,
+      projectName,
+      (docs) => {
+        // createdAt 없을 수 있는 초기 스냅샷 가드
+        const safe = (docs || []).map((g) => {
+          const created =
+            g.createdAt?.toDate ? g.createdAt.toDate() :
+            (typeof g.createdAt === 'string' ? new Date(g.createdAt) : null)
+          const updated =
+            g.updatedAt?.toDate ? g.updatedAt.toDate() :
+            (typeof g.updatedAt === 'string' ? new Date(g.updatedAt) : null)
+          return { ...g, _createdAt: created, _updatedAt: updated }
+        })
+        setGenerations(safe)
+        setLoadingGenerations(false)
+      }
+    )
+
+    return () => unsub && unsub()
+    // refreshTrigger가 바뀔 때도 재구독(필요하면)
+  }, [currentUser, projectName, refreshTrigger])
+
+
+
+  // 날짜 그룹화
+  const groupGenerationsByDate = (items) => {
+    if (!items || items.length === 0) return []
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
     const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
-    
-    const grouped = {
-      today: [],
-      yesterday: [],
-      lastWeek: [],
-      older: []
-    }
-    
-    generations.forEach(generation => {
-      if (!generation.createdAt) return
-      
-      const createdAt = generation.createdAt.toDate ? generation.createdAt.toDate() : new Date(generation.createdAt)
-      const createdDate = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate())
-      
-      if (createdDate.getTime() === today.getTime()) {
-        grouped.today.push(generation)
-      } else if (createdDate.getTime() === yesterday.getTime()) {
-        grouped.yesterday.push(generation)
-      } else if (createdDate >= lastWeek) {
-        grouped.lastWeek.push(generation)
-      } else {
-        grouped.older.push(generation)
-      }
+
+    const buckets = { today: [], yesterday: [], lastWeek: [], older: [] }
+
+    items.forEach((g) => {
+      const d = g._createdAt || g._updatedAt || new Date() // created 없으면 updated, 그래도 없으면 now
+      const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+      if (dd.getTime() === today.getTime()) buckets.today.push(g)
+      else if (dd.getTime() === yesterday.getTime()) buckets.yesterday.push(g)
+      else if (dd >= lastWeek) buckets.lastWeek.push(g)
+      else buckets.older.push(g)
     })
-    
-    const result = []
-    
-    if (grouped.today.length > 0) {
-      result.push({
-        period: 'TODAY',
-        items: grouped.today.slice(0, 5)
-      })
-    }
-    
-    if (grouped.yesterday.length > 0) {
-      result.push({
-        period: 'YESTERDAY',
-        items: grouped.yesterday.slice(0, 5)
-      })
-    }
-    
-    if (grouped.lastWeek.length > 0) {
-      result.push({
-        period: 'LAST 7 DAYS',
-        items: grouped.lastWeek.slice(0, 5)
-      })
-    }
-    
-    if (grouped.older.length > 0) {
-      result.push({
-        period: 'OLDER',
-        items: grouped.older.slice(0, 3)
-      })
-    }
-    
-    return result
+
+    const out = []
+    if (buckets.today.length) out.push({ period: 'TODAY', items: buckets.today })
+    if (buckets.yesterday.length) out.push({ period: 'YESTERDAY', items: buckets.yesterday })
+    if (buckets.lastWeek.length) out.push({ period: 'LAST 7 DAYS', items: buckets.lastWeek })
+    if (buckets.older.length) out.push({ period: 'OLDER', items: buckets.older.slice(0, 50) }) // 충분히 넉넉히
+    return out
   }
 
+  // ✅ 썸네일 URL 선택 로직 (storage > source)
+  const getThumbUrl = (g) =>
+    g?.result?.asset?.storageImageUrl ||
+    g?.result?.asset?.sourceUrl ||
+    ''
 
+  // ✅ 상태 뱃지
+  const StatusBadge = ({ status }) => {
+    const st = (status || '').toLowerCase()
+    if (st === 'completed') {
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Completed</span>
+    }
+    if (st === 'failed' || st === 'error') {
+      return <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">Failed</span>
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 border border-slate-200">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Generating
+      </span>
+    )
+  }
+
+  // 항목 클릭 → generationId만 넘기고, 상세(메시지/이미지)는 CreationPage가 구독해서 표시
+  const handleGenerationClick = (generation) => {
+    setSelectedGenerationId(generation.id)
+    if (window.loadChatHistoryFromSidebar) {
+      // 하위호환: 구 코드가 chatHistory/결과를 인라인에서 읽는 경우
+      window.loadChatHistoryFromSidebar([], generation.prompt || '', generation.result || null, generation.id)
+    }
+  }
+
+  const grouped = groupGenerationsByDate(generations)
 
   return (
     <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-slate-100 border-r border-slate-300 h-screen p-4 flex flex-col transition-all duration-300 absolute left-0 top-0 z-10`}>
-      {/* Sidebar Collapse/Expand Button - Top Center */}
+      {/* Collapse Btn */}
       <div className={`${isCollapsed ? 'flex justify-center' : 'flex justify-start'} mb-6`}>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
@@ -249,18 +211,15 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
               <a
                 href="#"
                 className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-lg text-sm transition-all duration-300 ${
-                  (item.action === 'newChat' && selectedGenerationId === null) || 
+                  (item.action === 'newChat' && selectedGenerationId === null) ||
                   (item.page === currentPage && selectedGenerationId === null)
                     ? 'bg-slate-200 text-slate-800'
                     : 'text-slate-700 hover:text-slate-800 hover:bg-slate-200'
                 }`}
                 onClick={(e) => {
-                  e.preventDefault();
-                  if (item.action === 'newChat') {
-                    handleNewChat();
-                  } else {
-                    setCurrentPage(item.page);
-                  }
+                  e.preventDefault()
+                  if (item.action === 'newChat') handleNewChat()
+                  else setCurrentPage(item.page)
                 }}
                 title={isCollapsed ? item.label : ''}
               >
@@ -277,104 +236,102 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
             <h3 className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3 whitespace-nowrap">
               Generation History
             </h3>
-            {loadingGenerations ? (
+
+            {/* 로딩 상태 */}
+            {loadingGenerations && (
               <div className="text-xs text-slate-500 text-center py-2">Loading...</div>
-            ) : generations.length > 0 ? (
+            )}
+
+            {/* 목록 */}
+            {!loadingGenerations && generations.length > 0 ? (
               <div className="space-y-4">
-                {groupGenerationsByDate(generations).map((period) => (
+                {grouped.map((period) => (
                   <div key={period.period} className="space-y-2">
                     <h4 className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                       {period.period}
                     </h4>
                     <ul className="space-y-1">
-                      {period.items.map((generation) => (
-                        <li key={generation.id}>
-                          <button
-                            onClick={() => handleGenerationClick(generation)}
-                            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-all duration-300 text-left ${
-                              selectedGenerationId === generation.id
-                                ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                                : 'text-slate-700 hover:text-slate-800 hover:bg-slate-200'
-                            }`}
-                            title={generation.prompt}
-                          >
-                            {/* 텍스트 내용 - 왼쪽 */}
-                            <div className="flex-1 min-w-0">
-                              <div className="text-xs text-slate-700 truncate">
-                                {generation.prompt || 'Untitled'}
-                              </div>
-                              <div className="text-xs text-slate-500">
-                                {generation.options?.style} • {generation.options?.size}
-                              </div>
-                            </div>
-                            
-                            {/* 이미지 썸네일 - 오른쪽 끝 */}
-                            <div className="flex-shrink-0 ml-2">
-                              {(() => {
-                                // 우선순위: Storage URL > DALL-E URL > 기본 아이콘
-                                const imageUrl = generation.result?.asset?.storageImageUrl || 
-                                               generation.result?.asset?.dalleImage ||
-                                               null
-                                
-                                if (imageUrl) {
-                                  return (
-                                    <div className="relative">
-                                      <img 
-                                        src={imageUrl}
-                                        alt="Generated preview"
-                                        className={`w-8 h-8 rounded object-cover ${
-                                          selectedGenerationId === generation.id
-                                            ? 'ring-2 ring-blue-300'
-                                            : ''
-                                        }`}
-                                        onError={(e) => {
-                                          // 이미지 로드 실패 시 기본 아이콘으로 대체
-                                          e.target.style.display = 'none'
-                                          const fallback = e.target.parentElement.querySelector('.image-fallback')
-                                          if (fallback) fallback.style.display = 'flex'
-                                        }}
-                                      />
-                                      {/* Fallback 이미지 (기본적으로 숨김) */}
-                                      <div className="image-fallback w-8 h-8 rounded bg-slate-200 flex items-center justify-center absolute top-0 left-0" style={{display: 'none'}}>
-                                        <ImageIcon className="w-4 h-4 text-slate-500" />
-                                      </div>
-                                    </div>
-                                  )
-                                }
-                                
-                                return (
-                                  <div className="w-8 h-8 rounded bg-slate-200 flex items-center justify-center">
-                                    <ImageIcon className="w-4 h-4 text-slate-500" />
+                      {period.items.map((g) => {
+                        const thumb = getThumbUrl(g)
+                        const isSelected = selectedGenerationId === g.id
+                        const status = g.status || g.result?.status || 'generating'
+                        return (
+                          <li key={g.id}>
+                            <button
+                              onClick={() => handleGenerationClick(g)}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-300 text-left ${
+                                isSelected
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                                  : 'text-slate-700 hover:text-slate-800 hover:bg-slate-200'
+                              }`}
+                              title={g.prompt}
+                            >
+                              {/* 썸네일 */}
+                              <div className="flex-shrink-0">
+                                <div className="relative w-8 h-8 rounded bg-white border border-slate-200 overflow-hidden grid place-items-center">
+                                  {thumb ? (
+                                    <img
+                                      src={thumb}
+                                      alt="Generated"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                        const fb = e.currentTarget.parentElement?.querySelector('.image-fallback')
+                                        if (fb) fb.setAttribute('style', 'display:flex')
+                                      }}
+                                    />
+                                  ) : null}
+                                  <div className="image-fallback hidden w-full h-full items-center justify-center">
+                                    {status?.toLowerCase() === 'generating' ? (
+                                      <Loader2 className="w-4 h-4 text-slate-500 animate-spin" />
+                                    ) : (
+                                      <ImageIcon className="w-4 h-4 text-slate-500" />
+                                    )}
                                   </div>
-                                )
-                              })()}
-                            </div>
-                          </button>
-                        </li>
-                      ))}
+                                </div>
+                              </div>
+
+                              {/* 텍스트 */}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs text-slate-700 truncate">
+                                  {g.prompt || 'Untitled'}
+                                </div>
+                                <div className="text-[11px] text-slate-500 truncate">
+                                  {g?.options?.style} • {g?.options?.size || g?.result?.meta?.size}
+                                </div>
+                              </div>
+
+                              {/* 상태 뱃지 */}
+                              <div className="flex-shrink-0">
+                                <StatusBadge status={status} />
+                              </div>
+                            </button>
+                          </li>
+                        )
+                      })}
                     </ul>
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : null}
+
+            {/* 빈 상태 */}
+            {!loadingGenerations && generations.length === 0 && (
               <div className="text-xs text-slate-500 text-center py-2">No generations yet</div>
             )}
           </div>
         )}
-        )}
-
-        {/* Recent Activity - 제거됨 (Firestore 기반으로 대체) */}
       </nav>
 
-      {/* User Profile Section - Bottom */}
+      {/* User Profile */}
       <div className="mt-auto">
-        <div className="relative">
+        <div className="relative" ref={profileDropdownRef}>
           <button
             onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
             className={`w-full flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} p-3 rounded-lg hover:bg-slate-200 transition-colors group`}
           >
             <div className="flex items-center space-x-3">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${getRandomColor(currentUser?.uid)}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-medium ${getRandomColor(currentUser?.uid || '')}`}>
                 {getUserInitials(currentUser?.displayName)}
               </div>
               {!isCollapsed && (
@@ -390,13 +347,17 @@ const CreationSidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentP
             </div>
           </button>
 
-          {/* Profile Dropdown */}
           {isProfileDropdownOpen && !isCollapsed && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-300 rounded-xl shadow-lg z-50" ref={profileDropdownRef}>
+            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-slate-300 rounded-xl shadow-lg z-50">
               <div className="p-2">
-                {profileDropdownItems.map((item, index) => (
+                {[
+                  { icon: Clock, label: 'Plans and Billing' },
+                  { icon: Plus, label: 'Invite members' },
+                  { icon: Globe, label: 'Upgrade your plan' },
+                  { icon: ChevronLeft, label: 'Switch Workspace' }
+                ].map((item, idx) => (
                   <button
-                    key={index}
+                    key={idx}
                     onClick={() => setIsProfileDropdownOpen(false)}
                     className="w-full flex items-center space-x-3 p-3 rounded-lg hover:bg-slate-50 transition-colors text-sm text-slate-700 hover:text-slate-900"
                   >

@@ -14,4 +14,5 @@ if (!apiKey) {
 
 export const openai = new OpenAI({
   apiKey: apiKey || "dummy-key", // 개발용 더미 키
+  organization: "org-20S8SXNXU026hzoUM2tVbNSc", // 조직 ID 추가
 }); 

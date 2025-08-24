@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ImageIcon, Heart, Download, Palette, Sparkles, TrendingUp } from 'lucide-react'
+import { ImageIcon, Heart, Download, Palette, Sparkles } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { getUserGenerations } from '../utils/firestore'
 
@@ -115,23 +115,6 @@ const RecommendationCards = () => {
       style: '3D',
       image: '🐉',
       timestamp: '4 days ago'
-    }
-  ]
-
-  const trendingStyles = [
-    {
-      title: 'Minimalist Icons',
-      description: 'Clean and simple minimalist icons',
-      trend: '+45%',
-      image: '⚡',
-      color: 'from-yellow-500/20 to-orange-500/20'
-    },
-    {
-      title: 'Gradient Logos',
-      description: 'Smooth gradient logos',
-      trend: '+32%',
-      image: '🌈',
-      color: 'from-purple-500/20 to-pink-500/20'
     }
   ]
 
@@ -282,32 +265,6 @@ const RecommendationCards = () => {
                 <h3 className="text-lg font-bold text-slate-900 mb-2">{style.title}</h3>
                 <p className="text-slate-700 text-sm">{style.description}</p>
               </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Trending Styles */}
-      <section>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-slate-900">Trending</h2>
-          <TrendingUp className="w-6 h-6 text-slate-600" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {trendingStyles.map((style, index) => (
-            <div
-              key={index}
-              className={`card bg-gradient-to-br ${style.color} relative overflow-hidden`}
-            >
-              <div className="absolute top-4 right-4 bg-slate-600 text-white text-xs px-2 py-1 rounded-full font-medium">
-                {style.trend}
-              </div>
-              <div className="text-4xl mb-4">{style.image}</div>
-              <h3 className="text-lg font-semibold mb-2 text-slate-900">{style.title}</h3>
-              <p className="text-slate-700 text-sm mb-4">{style.description}</p>
-              <button className="btn-secondary w-full">
-                Follow Trend
-              </button>
             </div>
           ))}
         </div>

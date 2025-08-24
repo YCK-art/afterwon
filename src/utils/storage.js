@@ -1,238 +1,286 @@
 import { storage } from '../firebase'
-import { ref, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage'
+import { ref, uploadString, uploadBytes, getDownloadURL, deleteObject, listAll } from 'firebase/storage'
 
-// 이미지를 Firebase Storage에 업로드 (개선된 버전)
-export const uploadImageToStorage = async (imageUrl, userId, generationId, projectName = 'default', retryCount = 0) => {
-  const maxRetries = 3
-  
+// MIME → 확장자 매핑
+const extFromMime = (mime) => {
+  if (!mime) return 'png'
+  if (mime.includes('png')) return 'png'
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
+  if (mime.includes('webp')) return 'webp'
+  if (mime.includes('gif')) return 'gif'
+  if (mime.includes('svg')) return 'svg'
+  return 'png'
+}
+
+// 캐시 헤더(이미지 재사용을 원할 땐 immutable 권장)
+const DEFAULT_CACHE_CONTROL = 'public, max-age=31536000, immutable'
+
+// base64 data URL 여부
+const isDataUrl = (url) => typeof url === 'string' && url.startsWith('data:image/')
+
+// 안전한 쿼리 파라미터 추가 (필요할 때만)
+const addQueryParam = (url, key, val) => {
   try {
-    console.log('Starting image upload to Firebase Storage...')
-    console.log('Project:', projectName)
-    console.log('User ID:', userId)
-    console.log('Generation ID:', generationId)
-    console.log('Retry attempt:', retryCount + 1)
-    
-    // CORS 문제 해결을 위한 프록시 사용
-    let fetchUrl = imageUrl
-    if (imageUrl.includes('google.com') || 
-        imageUrl.includes('freepik.com') || 
-        imageUrl.includes('external') ||
-        imageUrl.includes('blob.core.windows.net') ||  // Azure Blob Storage
-        imageUrl.includes('oaidalleapiprodscus') ||    // DALL-E Azure Storage
-        imageUrl.includes('private/')) {               // Private URLs
-      console.log('Using proxy for external/private image URL')
-      fetchUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`
-    }
-    
-    console.log('Fetching from:', fetchUrl)
-    
-    // 이미지 URL에서 blob 데이터 가져오기
-    const response = await fetch(fetchUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`)
-    }
-    
-    const blob = await response.blob()
-    console.log('Image blob size:', blob.size, 'bytes')
-    
-    // 빈 blob 체크
-    if (blob.size === 0) {
-      throw new Error('Image blob is empty')
-    }
-    
-    // Storage 경로 설정 (프로젝트별 구조)
-    const storagePath = `projects/${projectName}/users/${userId}/generations/${generationId}/image.jpg`
-    const storageRef = ref(storage, storagePath)
-    
-    // 이미지 업로드
-    const snapshot = await uploadBytes(storageRef, blob, {
-      contentType: 'image/jpeg',
-      customMetadata: {
-        userId: userId,
-        generationId: generationId,
-        projectName: projectName,
-        uploadedAt: new Date().toISOString(),
-        originalUrl: imageUrl,
-        retryCount: retryCount.toString()
+    const u = new URL(url)
+    u.searchParams.set(key, String(val))
+    return u.toString()
+  } catch {
+    // URL 파싱 실패 시 원본 반환
+    return url
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 1) 업로드 (gpt-image-1 base64 우선 경로)
+// ──────────────────────────────────────────────────────────────
+export const uploadImageToStorage = async (
+  imageUrl,
+  userId,
+  generationId,
+  projectName = 'default',
+  retryCount = 0
+) => {
+  const maxRetries = 3
+
+  try {
+    console.log('🚀 Upload start', { projectName, userId, generationId, retry: retryCount + 1 })
+
+    let contentType = 'image/png'
+    let fileExtension = 'png'
+    let storageRef
+    let metadata
+
+    // 경로 확정 함수
+    const buildPath = (ext) =>
+      `projects/${projectName}/users/${userId}/generations/${generationId}/image.${ext}`
+
+    // A) data URL (가장 안정적: gpt-image-1 응답)
+    if (isDataUrl(imageUrl)) {
+      // dataURL에서 MIME 추출
+      const mimeMatch = imageUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/)
+      contentType = mimeMatch ? mimeMatch[1] : 'image/png'
+      fileExtension = extFromMime(contentType)
+
+      const storagePath = buildPath(fileExtension)
+      storageRef = ref(storage, storagePath)
+
+      metadata = {
+        contentType,
+        cacheControl: DEFAULT_CACHE_CONTROL,
+        customMetadata: {
+          userId,
+          generationId,
+          projectName,
+          uploadedAt: new Date().toISOString(),
+          source: 'gpt-image-1-base64'
+        }
       }
-    })
-    
-    console.log('Image uploaded successfully to:', storagePath)
-    
-    // 다운로드 URL 반환
+
+      // ✅ data_url 업로드 API 사용 (fetch/atob 필요 없음)
+      const snapshot = await uploadString(storageRef, imageUrl, 'data_url', metadata)
+      console.log('✅ Uploaded (data_url) →', storagePath)
+
+      const downloadURL = await getDownloadURL(snapshot.ref)
+      // 캐시 무효화가 필요하다면 아래 주석 해제
+      // const finalURL = addQueryParam(downloadURL, 'v', Date.now())
+
+      return {
+        downloadURL, // finalURL,
+        storagePath,
+        metadata: snapshot.metadata
+      }
+    }
+
+    // B) 일반 URL (드물게 필요: 외부 이미지를 저장해야 할 때)
+    //  -> CORS 문제 회피용 프록시를 일관되게 사용 권장
+    console.log('🌐 Fetching external image URL via proxy')
+    const fetchUrl = `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+    const resp = await fetch(fetchUrl, { signal: controller.signal })
+    clearTimeout(timeoutId)
+    if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`)
+
+    const blob = await resp.blob()
+    contentType = resp.headers.get('content-type') || blob.type || 'image/jpeg'
+    fileExtension = extFromMime(contentType)
+
+    if (!blob.size) throw new Error('Image blob is empty')
+    if (blob.size > 20 * 1024 * 1024) throw new Error('Image file too large (max 20MB)')
+
+    const storagePath = buildPath(fileExtension)
+    storageRef = ref(storage, storagePath)
+
+    metadata = {
+      contentType,
+      cacheControl: DEFAULT_CACHE_CONTROL,
+      customMetadata: {
+        userId,
+        generationId,
+        projectName,
+        uploadedAt: new Date().toISOString(),
+        source: 'external-url',
+        originalUrl: imageUrl,
+        blobSize: String(blob.size)
+      }
+    }
+
+    const snapshot = await uploadBytes(storageRef, blob, metadata)
+    console.log('✅ Uploaded (blob) →', storagePath)
+
     const downloadURL = await getDownloadURL(snapshot.ref)
-    console.log('Download URL generated:', downloadURL)
-    
+    // const finalURL = addQueryParam(downloadURL, 'v', Date.now())
+
     return {
-      downloadURL,
+      downloadURL, // finalURL,
       storagePath,
       metadata: snapshot.metadata
     }
   } catch (error) {
-    console.error(`Failed to upload image to storage (attempt ${retryCount + 1}):`, error)
-    
-    // 재시도 로직
+    console.error(`❌ Upload failed (attempt ${retryCount + 1}):`, error)
     if (retryCount < maxRetries) {
-      console.log(`Retrying upload in 2 seconds... (${retryCount + 1}/${maxRetries})`)
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await new Promise((r) => setTimeout(r, 1500))
       return uploadImageToStorage(imageUrl, userId, generationId, projectName, retryCount + 1)
     }
-    
-    // 최대 재시도 횟수 초과
     throw new Error(`Upload failed after ${maxRetries} attempts: ${error.message}`)
   }
 }
 
-// Firebase Storage에서 이미지 다운로드 URL 가져오기
+// ──────────────────────────────────────────────────────────────
+// 2) 단일 파일 URL 얻기
+// ──────────────────────────────────────────────────────────────
 export const getImageFromStorage = async (imagePath) => {
   try {
     const storageRef = ref(storage, imagePath)
-    const downloadURL = await getDownloadURL(storageRef)
-    return downloadURL
+    return await getDownloadURL(storageRef)
   } catch (error) {
     console.error('Failed to get image from storage:', error)
     return null
   }
 }
 
-// 사용자의 모든 이미지 가져오기
+// ──────────────────────────────────────────────────────────────
+// 3) 재귀적으로 사용자 이미지 전부 가져오기
+//    (하위 폴더(generations/…)까지 포함)
+// ──────────────────────────────────────────────────────────────
+const listAllRecursive = async (dirRef) => {
+  const out = []
+  const res = await listAll(dirRef)
+  out.push(...res.items)
+  for (const prefix of res.prefixes) {
+    const nested = await listAllRecursive(prefix)
+    out.push(...nested)
+  }
+  return out
+}
+
 export const getUserImages = async (userId, projectName = 'default') => {
   try {
-    const userImagesRef = ref(storage, `projects/${projectName}/users/${userId}`)
-    const result = await listAll(userImagesRef)
-    
-    const images = []
-    for (const itemRef of result.items) {
+    const rootRef = ref(storage, `projects/${projectName}/users/${userId}`)
+    const items = await listAllRecursive(rootRef)
+    const results = []
+    for (const itemRef of items) {
       try {
-        const downloadURL = await getDownloadURL(itemRef)
-        images.push({
-          path: itemRef.fullPath,
-          url: downloadURL,
-          name: itemRef.name
-        })
-      } catch (error) {
-        console.error('Failed to get download URL for:', itemRef.fullPath, error)
+        const url = await getDownloadURL(itemRef)
+        results.push({ path: itemRef.fullPath, url, name: itemRef.name })
+      } catch (e) {
+        console.error('Get URL failed:', itemRef.fullPath, e)
       }
     }
-    
-    return images
+    return results
   } catch (error) {
     console.error('Failed to list user images:', error)
     return []
   }
 }
 
-// 프로젝트별 이미지 가져오기
+// 프로젝트 단위로 모으되 (옵션) 특정 유저만 필터
 export const getProjectImages = async (projectName, userId = null) => {
   try {
-    const projectRef = ref(storage, `projects/${projectName}`)
-    const result = await listAll(projectRef)
-    
-    const images = []
-    for (const itemRef of result.items) {
+    const rootRef = ref(storage, `projects/${projectName}`)
+    const items = await listAllRecursive(rootRef)
+    const results = []
+    for (const itemRef of items) {
       try {
-        const downloadURL = await getDownloadURL(itemRef)
-        images.push({
-          path: itemRef.fullPath,
-          url: downloadURL,
-          name: itemRef.name
-        })
-      } catch (error) {
-        console.error('Failed to get download URL for:', itemRef.fullPath, error)
+        const url = await getDownloadURL(itemRef)
+        results.push({ path: itemRef.fullPath, url, name: itemRef.name })
+      } catch (e) {
+        console.error('Get URL failed:', itemRef.fullPath, e)
       }
     }
-    
-    // 특정 사용자 필터링
-    if (userId) {
-      return images.filter(img => img.path.includes(`/users/${userId}/`))
-    }
-    
-    return images
+    return userId ? results.filter((x) => x.path.includes(`/users/${userId}/`)) : results
   } catch (error) {
     console.error('Failed to list project images:', error)
     return []
   }
 }
 
-// Storage에서 이미지 삭제
+// ──────────────────────────────────────────────────────────────
+// 4) 삭제
+// ──────────────────────────────────────────────────────────────
 export const deleteImageFromStorage = async (imagePath) => {
   try {
-    const storageRef = ref(storage, imagePath)
-    await deleteObject(storageRef)
-    console.log('Image deleted from storage:', imagePath)
+    await deleteObject(ref(storage, imagePath))
+    console.log('Deleted:', imagePath)
   } catch (error) {
-    console.error('Failed to delete image from storage:', error)
+    console.error('Failed to delete image:', error)
     throw error
   }
 }
 
-// 사용자의 모든 이미지 삭제
 export const deleteUserImages = async (userId, projectName = 'default') => {
-  try {
-    const userImages = await getUserImages(userId, projectName)
-    
-    for (const image of userImages) {
-      await deleteImageFromStorage(image.path)
+  const images = await getUserImages(userId, projectName)
+  for (const img of images) await deleteImageFromStorage(img.path)
+  console.log(`Deleted ${images.length} images for user ${userId}`)
+}
+
+// ──────────────────────────────────────────────────────────────
+// 5) URL 유효성 검사 (HEAD 금지 → <img> 로드 방식)
+// ──────────────────────────────────────────────────────────────
+export const validateImageUrl = (url) =>
+  new Promise((resolve) => {
+    try {
+      const img = new Image()
+      img.onload = () => resolve(true)
+      img.onerror = () => resolve(false)
+      img.src = addQueryParam(url, 'ts', Date.now()) // 캐시 회피용
+    } catch {
+      resolve(false)
     }
-    
-    console.log(`Deleted ${userImages.length} images for user ${userId}`)
-  } catch (error) {
-    console.error('Failed to delete user images:', error)
-    throw error
-  }
-}
+  })
 
-// 이미지 URL이 유효한지 확인
-export const validateImageUrl = async (url) => {
-  try {
-    const response = await fetch(url, { method: 'HEAD' })
-    return response.ok
-  } catch (error) {
-    return false
-  }
-}
-
-// 이미지 메타데이터 가져오기
+// ──────────────────────────────────────────────────────────────
+// 6) 경로에서 메타 데이터 파싱
+// ──────────────────────────────────────────────────────────────
 export const getImageMetadata = async (imagePath) => {
   try {
-    const storageRef = ref(storage, imagePath)
-    // Firebase Storage에서 메타데이터를 직접 가져올 수는 없지만,
-    // 경로에서 정보 추출
-    const pathParts = imagePath.split('/')
+    const parts = imagePath.split('/')
     return {
-      projectName: pathParts[1] || 'default',
-      userId: pathParts[3] || 'unknown',
-      generationId: pathParts[5] || 'unknown',
-      fileName: pathParts[6] || 'image.jpg',
+      projectName: parts[1] || 'default',
+      userId: parts[3] || 'unknown',
+      generationId: parts[5] || 'unknown',
+      fileName: parts[6] || 'image.png',
       fullPath: imagePath
     }
   } catch (error) {
-    console.error('Failed to get image metadata:', error)
+    console.error('Failed to parse image metadata:', error)
     return null
   }
 }
 
-// 이미지 업로드 상태 확인
+// ──────────────────────────────────────────────────────────────
+// 7) 업로드 상태 확인
+// ──────────────────────────────────────────────────────────────
 export const checkUploadStatus = async (imagePath) => {
   try {
-    const storageRef = ref(storage, imagePath)
-    const downloadURL = await getDownloadURL(storageRef)
-    return {
-      exists: true,
-      url: downloadURL,
-      status: 'uploaded'
-    }
+    const url = await getDownloadURL(ref(storage, imagePath))
+    return { exists: true, url, status: 'uploaded' }
   } catch (error) {
     if (error.code === 'storage/object-not-found') {
-      return {
-        exists: false,
-        status: 'not_found'
-      }
+      return { exists: false, status: 'not_found' }
     }
-    return {
-      exists: false,
-      status: 'error',
-      error: error.message
-    }
+    return { exists: false, status: 'error', error: error.message }
   }
 } 

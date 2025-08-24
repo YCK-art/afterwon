@@ -1,218 +1,159 @@
 import { Router } from "express";
 import { z } from "zod";
 import { openai } from "../openai";
-import { assembleUserPrompt, SYSTEM_PROMPT } from "../utils/templateLocking";
-import { validateSvg, generateCodeVariants, generateChecksum, convertSvgToPng } from "../utils/svgUtils";
-
-// 스타일별 상세 설명
-function getStyleDescription(style: string): string {
-  const styleDescriptions: Record<string, string> = {
-    LiquidGlass: "smooth, translucent glass effect with realistic refraction and highlights",
-    NeonGlow: "vibrant neon colors with glowing edges and cyberpunk aesthetic",
-    PixelArt: "retro pixelated style with clear, blocky shapes and limited color palette",
-    Skeuomorphism: "realistic 3D appearance with shadows, depth, and tactile feel",
-    "3D": "three-dimensional design with depth, perspective, and realistic lighting",
-    Flat: "clean, minimalist design with solid colors and simple geometric shapes",
-    Gradient: "smooth color transitions and beautiful color blending",
-    Minimalist: "simple, elegant design with plenty of white space and clean lines"
-  };
-  
-  return styleDescriptions[style] || "professional and modern design";
-}
 
 const router = Router();
 
 const bodySchema = z.object({
   type: z.enum(["Icon", "Emoji", "Illustration", "Logo", "Character"]),
-  style: z.enum(["LiquidGlass", "NeonGlow", "PixelArt", "Skeuomorphism", "3D", "Flat", "Gradient", "Minimalist"]),
-  size: z.enum(["512", "1024"]).transform(s => parseInt(s, 10)), // DALL-E 3 지원 크기만 허용
+  style: z.enum([
+    "LiquidGlass",
+    "NeonGlow",
+    "PixelArt",
+    "Skeuomorphism",
+    "3D",
+    "Flat",
+    "Gradient",
+    "Minimalist"
+  ]),
+  // GPT-Image-1 지원 크기: 1024x1024, 1024x1536, 1536x1024, auto
+  size: z.enum(["256", "512", "1024"]).transform((s) => {
+    // GPT-Image-1은 1024x1024 지원
+    return "1024x1024";
+  }),
   extras: z.array(z.string()).default([]),
   description: z.string().min(1)
 });
 
+// 스타일 설명(프롬프트 보조)
+function styleDesc(style: string): string {
+  const dict: Record<string, string> = {
+    LiquidGlass:
+      "liquid glass aesthetic with refraction-like highlights, rounded corners, subtle inner shadows; clean export-friendly gradients",
+    NeonGlow:
+      "thin neon strokes with strong outer glow; crisp edges; avoid page fill",
+    PixelArt:
+      "grid-aligned rectangular blocks; limited palette; no blur; no gradients",
+    Skeuomorphism:
+      "tactile bevels and material cues; layered gradients; vector-friendly",
+    "3D":
+      "layered gradients for depth; AO-like soft shadow; no raster textures",
+    Flat: "solid fills; simple geometry; high contrast; no shadows",
+    Gradient: "bold multi-stop gradients with smooth transitions; no page background",
+    Minimalist: "few shapes; large negative space; 1–2 colors; consistent thin strokes"
+  };
+  return dict[style] ?? "clean, professional vector look";
+}
+
+// GPT-Image-1 최적화 프롬프트 (투명 배경 지원)
+function buildImagePrompt(input: z.infer<typeof bodySchema>) {
+  return [
+    `TYPE: ${input.type} | STYLE: ${input.style} | TARGET SIZE: 1024x1024`,
+    `STYLE-DESC: ${styleDesc(input.style)}`,
+    `MAIN REQUEST: ${input.description}`,
+    "",
+    "COMPOSITION:",
+    "- centered single subject; balanced margins; no scene; no typography",
+    "",
+    "QUALITY & LOOK:",
+    "- crisp, clean edges; professional, export-friendly rendering",
+    "- avoid photographic textures, noise, banding, watermark",
+    "",
+    "CRITICAL BACKGROUND RULES:",
+    "- transparent background only",
+    "- no background color, no textures, no vignette, no canvas fill",
+    "- do not add outer drop shadows that read as page background"
+  ].join("\n");
+}
+
 router.post("/generate", async (req, res) => {
   try {
     const input = bodySchema.parse(req.body);
-    const userPrompt = assembleUserPrompt(input);
 
-    console.log("Generating with prompt:", userPrompt);
+    // 1) 프롬프트 조립
+    const prompt = buildImagePrompt(input);
 
-    // 1단계: DALL-E로 고품질 이미지 생성
-    let dalleImageUrl = null;
+    // 2) GPT-Image-1로 이미지 생성 (투명 배경 지원)
+    console.log("🚀 Sending request to GPT-Image-1 with prompt:", prompt);
+    console.log("📏 Size:", input.size);
     
-    try {
-      const dallePrompt = `Create a high-quality, professional ${input.type.toLowerCase()} with the following specifications:
-      
-      MAIN REQUEST: ${input.description}
-      STYLE: ${input.style} - ${getStyleDescription(input.style)}
-      TYPE: ${input.type}
-      
-      DESIGN APPROACH:
-      - Create a VECTOR-STYLE design that looks like it was made in Adobe Illustrator or similar vector software
-      - Use clean, geometric shapes and smooth curves typical of vector graphics
-      - Apply flat design principles with minimal shadows and depth
-      - Focus on crisp, clean edges and solid color fills
-      
-      QUALITY REQUIREMENTS:
-      - Ultra-high definition, detailed, professional design
-      - Clean, centered composition with no background clutter
-      - Vibrant, professional color palette
-      - Sharp, crisp details with no blur or pixelation
-      - Professional graphic design quality
-      
-      CRITICAL REQUIREMENTS:
-      - VECTOR STYLE: Make it look like a vector graphic, not a photograph
-      - NO BACKGROUND: Create the ${input.type.toLowerCase()} on a completely transparent/white background
-      - TRANSPARENT BACKGROUND: The image must have no background, background color, or background elements
-      - CENTERED DESIGN: Place the main subject in the center with no background distractions
-      - CLEAN EDGES: Ensure the design has clean, crisp edges without any background elements
-      - FLAT DESIGN: Use flat design principles with minimal 3D effects or shadows
-      - SOLID COLORS: Use solid, vibrant colors typical of vector graphics
-      
-      IMPORTANT: Focus on the main request "${input.description}" and make it the central element of the design. The final image must look like a professional vector graphic with a completely transparent background, no background colors, patterns, or elements. Make it appear as if it was created in vector design software.`;
-      
-      // DALL-E 3 크기 제한에 맞춰 크기 조정
-      // DALL-E 3는 1024x1024만 지원
-      const dalleSize: '1024x1024' = '1024x1024';
-      
-      const imageGeneration = await openai.images.generate({
-        model: "dall-e-3",
-        prompt: dallePrompt,
-        n: 1,
-        size: dalleSize,
-        quality: "hd",
-        style: "vivid"
-      });
-
-      dalleImageUrl = imageGeneration.data?.[0]?.url;
-      
-      if (dalleImageUrl) {
-        console.log("DALL-E image generated:", dalleImageUrl);
-      }
-    } catch (dalleError) {
-      console.warn("DALL-E generation failed:", dalleError);
-      throw new Error("Failed to generate image with DALL-E. Please try again.");
-    }
-
-    // 2단계: DALL-E 이미지를 기반으로 ChatGPT로 코드 생성
-    const codeGenerationPrompt = `Create high-quality SVG code for the following request:
-
-    USER REQUEST: ${input.description}
-    STYLE: ${input.style}
-    TYPE: ${input.type}
-    SIZE: ${input.size}x${input.size}
-    
-    REQUIREMENTS:
-    - Create a professional, high-quality SVG that matches the user's request exactly
-    - Use clean, optimized SVG code with proper viewBox and dimensions
-    - Include appropriate colors, gradients, and effects for the specified style
-    - Make sure the design is centered and properly sized
-    - No background, clean design
-    
-    OUTPUT FORMAT:
-    - SVG code only (no explanations)
-    - Proper viewBox="0 0 ${input.size} ${input.size}"
-    - Clean, export-friendly paths
-    - No watermarks or unnecessary elements`;
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      top_p: 0.1,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: codeGenerationPrompt }
-      ]
+    const imgResp = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt,
+      size: input.size as "1024x1024",
+      background: "transparent" // 투명 배경 강제
     });
 
-    const svg = completion.choices?.[0]?.message?.content?.trim() || "";
+    console.log("📡 GPT-Image-1 response:", JSON.stringify(imgResp, null, 2));
     
-    if (!svg) {
-      throw new Error("No SVG content received from AI");
+    const data = imgResp.data?.[0];
+    console.log("📊 First data item:", data);
+    
+    // GPT-Image-1은 b64_json 또는 url을 반환할 수 있음
+    const imageUrl = data?.url || data?.b64_json;
+    if (!imageUrl) {
+      console.error("❌ No image data in response");
+      console.error("❌ Full response data:", imgResp.data);
+      throw new Error("Image generation failed (no data)");
+    }
+    
+    // b64_json이 있으면 data URL로 변환, 없으면 URL 그대로 사용
+    let finalImageUrl = imageUrl;
+    if (data?.b64_json) {
+      finalImageUrl = `data:image/png;base64,${data.b64_json}`;
     }
 
-    console.log("Generated SVG based on DALL-E image:", svg.substring(0, 100) + "...");
-
-    const validSvg = validateSvg(svg, input.size);
-    const checksum = generateChecksum(validSvg);
-    const codeVariants = generateCodeVariants(validSvg);
-
-    // PNG 변환 (선택사항)
-    const png = await convertSvgToPng(validSvg, input.size);
+    // 3) 응답 (GPT-Image-1은 투명 배경 지원)
 
     res.json({
       status: "ok",
-      asset: { 
-        svg: validSvg, 
-        png: png, 
+      asset: {
+        svg: "", // SVG는 생성하지 않으므로 빈 문자열
+        png: finalImageUrl,
         jpeg: null,
-        dalleImage: dalleImageUrl // DALL-E 이미지 URL 추가
+        dalleImage: finalImageUrl, // 클라이언트 호환성을 위해 dalleImage 필드 추가
+        storageImageUrl: finalImageUrl // storageImageUrl도 추가
       },
-      code: codeVariants,
-      meta: { 
-        ...input, 
-        size: input.size.toString(),
-        checksum 
-      }
+      code: {
+        svg: "",
+        react: "",
+        html: "",
+        dataUrl: finalImageUrl
+      },
+      meta: {
+        type: input.type,
+        style: input.style,
+        size: String(input.size),
+        extras: input.extras,
+        checksum: `gpt-image-1-${Date.now()}`,
+        description: input.description
+      },
+      message: "Image generated successfully with GPT-Image-1 (transparent background)"
     });
-
   } catch (e: any) {
-    console.error("Generation error:", e);
-    res.status(400).json({ 
-      status: "error", 
-      message: e.message || "Generation failed" 
+    console.error("[GPT-Image-1] generation error:", e);
+    console.error("Error details:", {
+      name: e?.name,
+      message: e?.message,
+      stack: e?.stack,
+      code: e?.code,
+      status: e?.status
     });
-  }
-});
-
-// 이미지 다운로드 엔드포인트 추가
-router.post("/download-image", async (req, res) => {
-  try {
-    const { imageUrl, format = 'png' } = req.body;
     
-    if (!imageUrl) {
-      return res.status(400).json({ error: 'Image URL is required' });
+    // OpenAI API 에러인지 확인
+    if (e?.status) {
+      res.status(e.status).json({
+        status: "error",
+        message: `OpenAI API Error: ${e.message}`,
+        code: e.status
+      });
+    } else {
+      res.status(500).json({
+        status: "error",
+        message: e?.message || "Generation failed",
+        details: e?.toString()
+      });
     }
-
-    console.log(`Downloading image from: ${imageUrl} as ${format}`);
-
-    // 이미지 다운로드
-    const response = await fetch(imageUrl);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
-
-    const imageBuffer = await response.arrayBuffer();
-    
-    // 포맷에 따른 MIME 타입 설정
-    let mimeType = 'image/png';
-    let fileExtension = 'png';
-    
-    if (format === 'jpg' || format === 'jpeg') {
-      mimeType = 'image/jpeg';
-      fileExtension = 'jpg';
-    } else if (format === 'webp') {
-      mimeType = 'image/webp';
-      fileExtension = 'webp';
-    }
-
-    // 응답 헤더 설정
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="ai-generated-image.${fileExtension}"`);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    // 이미지 데이터 전송
-    res.send(Buffer.from(imageBuffer));
-    
-  } catch (error: any) {
-    console.error('Image download error:', error);
-    res.status(500).json({ 
-      error: 'Failed to download image',
-      message: error.message || 'Unknown error'
-    });
   }
 });
 
