@@ -1,7 +1,10 @@
+import { useState } from 'react'
+import { useTheme } from '../contexts/ThemeContext'
 import { ArrowUp, X, Plus, Image as ImageIcon } from 'lucide-react'
-import { useState, useRef } from 'react'
+import { useRef } from 'react'
 
 const PromptInput = ({ prompt, setPrompt, onGenerate, selectedOptions, onRemoveOption }) => {
+  const { isDark } = useTheme()
   const [uploadedImages, setUploadedImages] = useState([])
   const fileInputRef = useRef(null)
 
@@ -51,7 +54,11 @@ const PromptInput = ({ prompt, setPrompt, onGenerate, selectedOptions, onRemoveO
   return (
     <form onSubmit={handleSubmit} className="relative">
       <div className="relative">
-        <div className="w-full min-h-[120px] bg-white border border-slate-300 text-slate-900 placeholder:text-slate-500 rounded-2xl px-6 py-4 pr-20 text-lg focus-within:ring-2 focus-within:ring-slate-500/50 focus-within:border-slate-500 transition-all">
+        <div className={`w-full min-h-[120px] border rounded-2xl px-6 py-4 pr-20 text-lg focus-within:ring-2 focus-within:ring-slate-500/50 focus-within:border-slate-500 transition-all theme-transition ${
+          isDark 
+            ? 'bg-dark-surface border-dark-border text-dark-text placeholder:text-dark-text-secondary' 
+            : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-500'
+        }`}>
           {/* Selected Options Tags and Uploaded Images Thumbnails */}
           {(getSelectedOptionsCount() > 0 || uploadedImages.length > 0) && (
             <div className="flex flex-wrap gap-2 mb-3">

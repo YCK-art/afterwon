@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Plus, ChevronDown, Clock, Image as ImageIcon } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { getUserGenerations } from '../utils/firestore'
 import { useNavigate } from 'react-router-dom'
 
 const SessionPage = () => {
   const { currentUser } = useAuth()
+  const { isDark } = useTheme()
   const navigate = useNavigate()
   const [sortBy, setSortBy] = useState('Date updated')
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false)
@@ -96,12 +98,21 @@ const SessionPage = () => {
   ]
 
   return (
-    <main className="flex-1 p-4 sm:p-6 overflow-y-auto pt-8 h-full bg-white">
+    <main className={`flex-1 p-4 sm:p-6 overflow-y-auto pt-8 h-full theme-transition ${
+      isDark ? 'bg-dark-bg text-dark-text' : 'bg-white'
+    }`}>
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">Sessions</h1>
-          <button className="bg-slate-600 text-white px-4 py-2 rounded-lg hover:bg-slate-700 transition-colors">
+          <h1 className={`text-3xl font-bold theme-transition ${
+            isDark ? 'text-dark-text' : 'text-slate-800'
+          }`}>Sessions</h1>
+          <button className={`px-4 py-2 rounded-lg transition-colors theme-transition ${
+            isDark 
+              ? 'bg-dark-primary text-white hover:bg-blue-600' 
+              : 'bg-slate-600 text-white hover:bg-slate-700'
+          }`}>
+            <Plus className="w-4 h-4 inline-block mr-1" />
             New Session
           </button>
         </div>
@@ -130,12 +141,24 @@ const SessionPage = () => {
           {loading ? (
             // 로딩 상태
             Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="h-48 bg-slate-200 animate-pulse"></div>
+              <div key={index} className={`border rounded-xl overflow-hidden shadow-sm theme-transition ${
+                isDark 
+                  ? 'bg-dark-surface border-dark-border' 
+                  : 'bg-white border-slate-200'
+              }`}>
+                <div className={`h-48 animate-pulse theme-transition ${
+                  isDark ? 'bg-dark-card' : 'bg-slate-200'
+                }`}></div>
                 <div className="p-4">
-                  <div className="h-4 bg-slate-200 rounded animate-pulse mb-2"></div>
-                  <div className="h-3 bg-slate-200 rounded animate-pulse mb-3"></div>
-                  <div className="h-6 bg-slate-200 rounded animate-pulse"></div>
+                  <div className={`h-4 rounded animate-pulse mb-2 theme-transition ${
+                    isDark ? 'bg-dark-card' : 'bg-slate-200'
+                  }`}></div>
+                  <div className={`h-3 rounded animate-pulse mb-3 theme-transition ${
+                    isDark ? 'bg-dark-card' : 'bg-slate-200'
+                  }`}></div>
+                  <div className={`h-6 rounded animate-pulse theme-transition ${
+                    isDark ? 'bg-dark-card' : 'bg-slate-200'
+                  }`}></div>
                 </div>
               </div>
             ))
@@ -144,11 +167,15 @@ const SessionPage = () => {
             sessions.map((session) => (
               <div 
                 key={session.id} 
-                className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                className={`border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer theme-transition ${
+                  isDark 
+                    ? 'bg-dark-surface border-dark-border hover:shadow-lg' 
+                    : 'bg-white border-slate-200 hover:shadow-md'
+                }`}
                 onClick={() => {
-                  // Creation 페이지에서 이 값을 읽어 사이드바 선택
-                  localStorage.setItem('openGenerationId', session.id)
-                  navigate('/creation') // 라우트 경로는 앱에 맞게 조정
+                  // 선택할 생성 이력 ID 저장 후 Creation 페이지로 이동
+                  localStorage.setItem("openGenerationId", session.id)
+                  navigate("/creation")
                 }}
               >
                 {/* Thumbnail */}
@@ -182,13 +209,21 @@ const SessionPage = () => {
                 
                 {/* Content */}
                 <div className="p-4">
-                  <h3 className="font-semibold text-slate-800 mb-2 truncate">{session.title}</h3>
-                  <div className="flex items-center justify-between text-sm text-slate-600 mb-3">
+                  <h3 className={`font-semibold mb-2 truncate theme-transition ${
+                    isDark ? 'text-dark-text' : 'text-slate-800'
+                  }`}>{session.title}</h3>
+                  <div className={`flex items-center justify-between text-sm mb-3 theme-transition ${
+                    isDark ? 'text-dark-text-secondary' : 'text-slate-600'
+                  }`}>
                     <span>{session.lastUpdated}</span>
                     <span>{session.generations} generation</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="inline-block bg-slate-100 text-slate-700 px-2 py-1 rounded-full text-xs">
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs theme-transition ${
+                      isDark 
+                        ? 'bg-dark-card text-dark-text-secondary' 
+                        : 'bg-slate-100 text-slate-700'
+                    }`}>
                       {session.type}
                     </span>
                   </div>
@@ -198,10 +233,16 @@ const SessionPage = () => {
           ) : (
             // 데이터가 없는 경우
             <div className="col-span-full text-center py-12">
-              <div className="text-slate-400 mb-4">
+              <div className={`mb-4 theme-transition ${
+                isDark ? 'text-dark-text-secondary' : 'text-slate-400'
+              }`}>
                 <ImageIcon className="w-16 h-16 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-slate-600 mb-2">No sessions yet</h3>
-                <p className="text-slate-500">Create your first AI-generated image to get started!</p>
+                <h3 className={`text-lg font-medium mb-2 theme-transition ${
+                  isDark ? 'text-dark-text-secondary' : 'text-slate-600'
+                }`}>No sessions yet</h3>
+                <p className={`theme-transition ${
+                  isDark ? 'text-dark-text-secondary' : 'text-slate-500'
+                }`}>Create your first AI-generated image to get started!</p>
               </div>
             </div>
           )}

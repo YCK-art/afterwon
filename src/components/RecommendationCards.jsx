@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { ImageIcon, Heart, Download, Palette, Sparkles } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { getUserGenerations } from '../utils/firestore'
 
 const RecommendationCards = () => {
   const { currentUser } = useAuth()
+  const { isDark } = useTheme()
   const [recentGenerations, setRecentGenerations] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -123,8 +125,12 @@ const RecommendationCards = () => {
       {/* Recent Creations */}
       <section>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-slate-900">Recent Creations</h2>
-          <button className="text-slate-600 hover:text-slate-800 text-sm font-medium">
+          <h2 className={`text-2xl font-bold theme-transition ${
+            isDark ? 'text-dark-text' : 'text-slate-900'
+          }`}>Recent Creations</h2>
+          <button className={`text-sm font-medium theme-transition ${
+            isDark ? 'text-dark-text-secondary hover:text-dark-text' : 'text-slate-600 hover:text-slate-800'
+          }`}>
             View All →
           </button>
         </div>
@@ -210,8 +216,12 @@ const RecommendationCards = () => {
       {/* Recommended Styles */}
       <section>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-slate-900">Recommended Styles</h2>
-          <button className="text-slate-600 hover:text-slate-800 text-sm font-medium">
+          <h2 className={`text-2xl font-bold theme-transition ${
+            isDark ? 'text-dark-text' : 'text-slate-900'
+          }`}>Recommended Styles</h2>
+          <button className={`text-sm font-medium theme-transition ${
+            isDark ? 'text-dark-text-secondary hover:text-dark-text' : 'text-slate-600 hover:text-slate-800'
+          }`}>
             View All Styles →
           </button>
         </div>

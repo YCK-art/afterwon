@@ -4,17 +4,21 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class', // 다크모드 활성화
   theme: {
     extend: {
       colors: {
-        background: '#0f0f0f',
-        foreground: '#ffffff',
-        primary: '#3B82F6',
-        secondary: '#8B5CF6',
-        accent: '#6366f1',
-        muted: '#374151',
-        border: '#374151',
-      },
+        // 다크모드용 커스텀 색상
+        dark: {
+          bg: '#121212',
+          surface: '#1E1E1E',
+          card: '#2D2D2D',
+          primary: '#4F46E5',
+          text: '#FFFFFF',
+          'text-secondary': '#E5E7EB',
+          border: '#374151'
+        }
+      }
     },
   },
   plugins: [],

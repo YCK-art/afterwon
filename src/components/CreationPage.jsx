@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Camera, Smile, Plus, ChevronDown, ArrowUp, X, Image as ImageIcon, Palette, Ruler, Settings, Sparkles, Download, Copy, Check } from 'lucide-react'
 import { generateAsset } from '../utils/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { saveGenerationHistory } from '../utils/firestore'
 import { uploadImageToStorage } from '../utils/storage'
 import ImageUploadTest from './ImageUploadTest'
@@ -29,6 +30,7 @@ const normalizeChatForFirestore = (history) =>
 
 const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => {
   const { currentUser } = useAuth()
+  const { isDark } = useTheme()
   const [prompt, setPrompt] = useState('')
   const [uploadedImages, setUploadedImages] = useState([])
   const [activeSegment, setActiveSegment] = useState('image') // 'image' 또는 'code'
@@ -1437,16 +1439,22 @@ const CreationPage = ({ startNewChat, onRefreshSidebar, onLoadChatHistory }) => 
   ]
 
   return (
-    <div className="h-full flex bg-white">
+    <div className={`h-full flex theme-transition ${
+      isDark ? 'bg-dark-bg' : 'bg-white'
+    }`}>
       {/* Left Section - Chat Interface (리사이즈 가능한 너비) */}
       <div 
-        className="flex flex-col border-r border-slate-200"
+        className={`flex flex-col border-r theme-transition ${
+          isDark ? 'border-dark-border' : 'border-slate-200'
+        }`}
         style={{ width: `${leftPanelWidth}px` }}
       >
         <div className="flex-1 p-4 overflow-hidden flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between mb-6 flex-shrink-0">
-            <h1 className="text-xl font-bold text-slate-800">Afterwon 1.0</h1>
+            <h1 className={`text-xl font-bold theme-transition ${
+              isDark ? 'text-dark-text' : 'text-slate-800'
+            }`}>Afterwon 1.0</h1>
             <div className="flex items-center space-x-2">
               {/* 테스트 모드 토글 버튼 */}
               <button

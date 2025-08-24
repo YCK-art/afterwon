@@ -6,6 +6,7 @@ import CreationSidebar from './components/CreationSidebar'
 import CreationPage from './components/CreationPage'
 import LandingPage from './components/LandingPage'
 import SignUpPage from './components/SignUpPage'
+import SettingsPage from './components/SettingsPage'
 import { AuthProvider } from './contexts/AuthContext'
 
 function App() {
@@ -180,6 +181,8 @@ function App() {
         />
       case 'signup':
         return <SignUpPage onBackToLanding={handleBackToLanding} onLoginSuccess={handleLoginSuccess} />
+      case 'settings':
+        return <SettingsPage />
       case 'landing':
         return <LandingPage onLogin={handleLogin} onSignUp={handleSignUp} onExplore={handleExplore} onGetStarted={handleGetStarted} />
       case 'home':

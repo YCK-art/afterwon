@@ -22,10 +22,12 @@ import {
   LogOut
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { useTheme } from '../contexts/ThemeContext'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 
 const Sidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentPage }) => {
+  const { isDark } = useTheme()
   const [activeDropdown, setActiveDropdown] = useState(null)
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
   const profileDropdownRef = useRef(null)
@@ -89,7 +91,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentPage }) =
   const menuItems = [
     { icon: Home, label: 'Home', page: 'home' },
     { icon: Image, label: 'Creation', page: 'creation' },
-    { icon: Palette, label: 'Session', page: 'session' }
+    { icon: Palette, label: 'Session', page: 'session' },
+    { icon: Settings, label: 'Settings', page: 'settings' }
   ]
 
   const assetItems = [
@@ -112,7 +115,11 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentPage }) =
   ]
 
   return (
-    <div className={`${isCollapsed ? 'w-20' : 'w-64'} bg-slate-100 border-r border-slate-300 h-screen p-4 flex flex-col transition-all duration-300 absolute left-0 top-0 z-10`}>
+    <div className={`${isCollapsed ? 'w-20' : 'w-64'} border-r h-screen p-4 flex flex-col transition-all duration-300 absolute left-0 top-0 z-10 theme-transition ${
+      isDark 
+        ? 'bg-dark-surface border-dark-border' 
+        : 'bg-slate-100 border-slate-300'
+    }`}>
       {/* Sidebar Collapse/Expand Button - Top Center */}
       <div className={`${isCollapsed ? 'flex justify-center' : 'flex justify-start'} mb-6`}>
         <button
@@ -157,6 +164,8 @@ const Sidebar = ({ isCollapsed, setIsCollapsed, currentPage, setCurrentPage }) =
                     onClick={() => {
                       if (item.label === 'Log out') {
                         handleLogout()
+                      } else if (item.label === 'Settings') {
+                        setCurrentPage('settings')
                       }
                       setIsProfileDropdownOpen(false)
                     }}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Plus, ArrowUp, X, Download, Image as ImageIcon, Heart, Palette, Sparkles, Ruler, Settings } from 'lucide-react'
+import { useTheme } from '../contexts/ThemeContext'
 import PromptInput from './PromptInput'
 import RecommendationCards from './RecommendationCards'
 
@@ -11,6 +12,7 @@ const MainContent = ({
   onGenerate,
   isSidebarCollapsed = false
 }) => {
+  const { isDark } = useTheme()
   const [activeDropdown, setActiveDropdown] = useState(null)
   const [displayText, setDisplayText] = useState('')
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -77,17 +79,25 @@ const MainContent = ({
   ]
 
   return (
-    <main className="p-4 sm:p-6 pt-8 bg-white">
+    <main className={`p-4 sm:p-6 pt-8 theme-transition ${isDark ? 'bg-dark-bg text-dark-text' : 'bg-white'}`}>
       <div className={`mx-auto transition-all duration-300 w-full ${isSidebarCollapsed ? 'max-w-6xl' : 'max-w-5xl'} sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl 2xl:max-w-8xl`}>
         {/* Main Card - 모든 내용을 하나의 카드에 통합 */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 md:p-12 mb-8 sm:mb-12 md:mb-16 min-h-[600px] sm:min-h-[650px] flex flex-col justify-center">
+        <div className={`border rounded-2xl p-6 sm:p-8 md:p-12 mb-8 sm:mb-12 md:mb-16 min-h-[600px] sm:min-h-[650px] flex flex-col justify-center theme-transition ${
+          isDark 
+            ? 'bg-dark-surface border-dark-border' 
+            : 'bg-slate-50 border-slate-200'
+        }`}>
           {/* Title and Description */}
           <div className="text-center mb-6 sm:mb-8">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 min-h-[2rem] sm:min-h-[3rem] text-slate-900">
+            <h1 className={`text-2xl sm:text-3xl md:text-4xl font-bold mb-4 min-h-[2rem] sm:min-h-[3rem] theme-transition ${
+              isDark ? 'text-dark-text' : 'text-slate-900'
+            }`}>
               {displayText}
               <span className="animate-pulse">|</span>
             </h1>
-            <p className="text-sm sm:text-base md:text-lg text-slate-700">
+            <p className={`text-sm sm:text-base md:text-lg theme-transition ${
+              isDark ? 'text-dark-text-secondary' : 'text-slate-700'
+            }`}>
               From icons to full UI components, just say it.
             </p>
           </div>

@@ -20,8 +20,14 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
   }
 
   const handleFirstLineComplete = () => {
+    console.log('First line completed!')
     setFirstLineComplete(true)
   }
+
+  // 디버깅을 위한 상태 로깅
+  useEffect(() => {
+    console.log('LandingPage mounted, firstLineComplete:', firstLineComplete)
+  }, [firstLineComplete])
 
   const scrollToNextSection = () => {
     // 부드러운 스크롤로 다음 섹션으로 이동
@@ -51,7 +57,7 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
       <div className="relative h-screen w-full">
         {/* Background GIF */}
         <img
-          src="/images/landing4.gif"
+          src="/images/pinterest-video.gif"
           alt="Background Animation"
           className="w-full h-full object-cover"
           style={{
@@ -106,8 +112,8 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
       </div>
 
       {/* Black Section Below */}
-      <div className="bg-black min-h-screen w-full">
-        <div className="flex flex-col items-center justify-start pt-20">
+      <div className="bg-black w-full" style={{ minHeight: '140vh' }}>
+        <div className="flex flex-col items-center justify-start pt-20 pb-60">
           <div className="text-center w-full px-6">
             <p className="text-white text-2xl md:text-3xl lg:text-4xl font-medium mb-8">
               Create <span style={{ fontFamily: 'Workbench, sans-serif', color: '#87CEEB' }}>UI Components</span> to <span style={{ fontFamily: 'Workbench, sans-serif', color: '#FFD700' }}>Unique Emojis</span>
@@ -130,171 +136,66 @@ const LandingPage = ({ onLogin, onSignUp, onExplore, onGetStarted }) => {
             </div>
 
             {/* Puzzle Gallery */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1 w-full mb-12">
+            <div className="grid grid-cols-3 gap-0 w-full h-[400px] mb-32">
               {/* Top Row */}
               <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
+                    src="/images/example/example1.png" 
+                    alt="Example 1" 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>New</span>
-                  </div>
                 </div>
               </div>
               <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
+                    src="/images/example/example2.png" 
+                    alt="Example 2" 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>Top Choice</span>
-                  </div>
                 </div>
               </div>
-              <div className="col-span-1 sm:col-span-2 row-span-1 sm:row-span-2">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
-                    className="w-full h-full object-cover"
-                  />
+              <div className="col-span-1 row-span-1">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
                     src="/images/example/example3.png" 
                     alt="Example 3" 
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                </div>
-              </div>
-              <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>Top Choice</span>
-                  </div>
-                </div>
-              </div>
-              <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>New</span>
-                  </div>
                 </div>
               </div>
               
               {/* Middle Row */}
-              <div className="col-span-1 sm:col-span-2 row-span-1 sm:row-span-2">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
-                    className="w-full h-full object-cover"
-                  />
-                  <img 
-                    src="/images/example/gameicon.png" 
-                    alt="Game Icon" 
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                </div>
-              </div>
-              <div className="col-span-1 sm:col-span-2 md:col-span-3 lg:col-span-4 xl:col-span-4 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>New</span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Bottom Row */}
               <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
+                    src="/images/example/example4.png" 
+                    alt="Example 4" 
                     className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>Top Choice</span>
-                  </div>
-                </div>
-              </div>
-              <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
-                  <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
-                    className="w-full h-full object-cover"
-                  />
-                  <img 
-                    src="/images/example/chaticon.png" 
-                    alt="Chat Icon" 
-                    className="absolute inset-0 w-full h-full object-cover"
                   />
                 </div>
               </div>
               <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
+                    src="/images/example/example5.png" 
+                    alt="Example 5" 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>Top Choice</span>
-                  </div>
                 </div>
               </div>
               <div className="col-span-1 row-span-1">
-                <div className="relative rounded-lg overflow-hidden aspect-square shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
+                <div className="relative w-full h-full overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer">
                   <img 
-                    src="/images/homepage/background.png" 
-                    alt="Background" 
+                    src="/images/example/example6.png" 
+                    alt="Example 6" 
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-white font-bold text-xs drop-shadow-lg" style={{ fontFamily: 'ProductSans, sans-serif' }}>New</span>
-                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
-      
-      {/* Bottom Get Started Button */}
-      <div className="py-16 bg-black">
-        <div className="max-w-4xl mx-auto text-center px-4">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-6" style={{ fontFamily: 'Doto, sans-serif' }}>
-            Ready to Create Something Amazing?
-          </h2>
-          <p className="text-lg text-gray-300 mb-8 max-w-2xl mx-auto">
-            Join thousands of creators who are already using Afterwon to bring their ideas to life.
-          </p>
-          <button
-            onClick={handleGetStarted}
-            className="bg-white text-black px-12 py-4 rounded-full font-bold text-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-105 shadow-2xl hover:shadow-3xl"
-            style={{ fontFamily: 'ProductSans, sans-serif' }}
-          >
-            Get Started Now
-          </button>
         </div>
       </div>
       
